@@ -1,7 +1,7 @@
 // Commit Trust Card — Google SERP content script
 // Injects compact trust cards next to search results that match known subjects
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = "https://commit-backend.fly.dev";
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 async function injectSerp() {
@@ -58,7 +58,7 @@ function createSerpCard(data) {
   circle.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    window.open(`https://commit.dev/trust/github/${subject.identifier}`, "_blank");
+    window.open(`https://commit-backend.fly.dev/trust/github/${subject.identifier}`, "_blank");
   });
 
   const meta = document.createElement("span");
