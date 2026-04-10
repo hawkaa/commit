@@ -33,6 +33,42 @@ Always read DESIGN.md before making any visual or UI decisions.
 All font choices, colors, spacing, and aesthetic direction are defined there.
 Do not deviate without explicit user approval.
 
+## Phase 1 Progress
+
+### Phase 1a — Core (weeks 1-2)
+- [x] Rust backend (axum + SQLite)
+- [x] GET /trust-card (GitHub repos, caching, Commit Score)
+- [x] GET /badge/{kind}/{id}.svg (color-coded SVG)
+- [x] GET /trust/{kind}/{id} (SSR trust card page)
+- [x] POST /endorsements + GET /endorsements
+- [x] Commit Score algorithm (Layer 1)
+- [x] Chrome extension: content script for GitHub
+- [x] Chrome extension: content script for Google SERP
+- [x] Chrome extension: keypair generation
+- [ ] Deploy to Fly.io
+- [ ] Submit to Chrome Web Store
+
+### Phase 1b — Growth surfaces (weeks 2-3)
+- [x] Trust card page (SSR)
+- [x] Badge SVG endpoint
+- [ ] MCP server (thin wrapper over trust-card API)
+- [ ] OG meta tags on trust card pages (social previews)
+- [ ] L2 contract deployment
+
+### Phase 2 — TLSNotary + Endorsements (weeks 3-6)
+- [ ] TLSNotary integration (tlsn-js)
+- [ ] Own Notary server
+- [ ] ZK-verified endorsement flow
+- [ ] Network keyring + key sharing
+- [ ] L2 attestation for endorsements
+- [ ] Commit Score v2 (Layer 1 + Layer 2)
+
+### Phase 3 — Network + Launch (weeks 6-9)
+- [ ] "N in your network endorse this" display
+- [ ] Access gate activation
+- [ ] Seed endorsements from founder
+- [ ] Launch: HN, crypto Twitter, Rust community
+
 ## Testing
 
 ```bash
