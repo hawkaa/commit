@@ -34,6 +34,10 @@ fn test_app() -> TestServer {
             post(commit_backend::routes::endorsement::submit_endorsement)
                 .get(commit_backend::routes::endorsement::get_endorsements),
         )
+        .route(
+            "/privacy",
+            get(commit_backend::routes::privacy::get_privacy_page),
+        )
         .with_state(state);
     TestServer::new(app)
 }
@@ -90,6 +94,17 @@ async fn nonexistent_route_returns_404() {
     let server = test_app();
     let resp = server.get("/nonexistent").await;
     resp.assert_status(axum::http::StatusCode::NOT_FOUND);
+}
+
+// --- Privacy page tests ---
+
+#[tokio::test]
+async fn privacy_page_returns_200_with_html() {
+    let server = test_app();
+    let resp = server.get("/privacy").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+    assert!(body.contains("Privacy Policy"));
 }
 
 // --- Trust page tests ---

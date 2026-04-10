@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Commit — Trust Scores for Code",
+  "name": "Commit — Verifiable Trust Scores",
   "version": "0.1.0",
-  "description": "See behavioral trust signals alongside GitHub repos and search results. Commit Score shows what stars and ratings can't.",
-  "permissions": ["storage"],
+  "description": "Trust signals you can verify. See Commit Scores for GitHub repos, businesses, and services — based on public evidence, not opinions.",
+  "homepage_url": "https://commit-backend.fly.dev",
+  "permissions": ["storage", "alarms"],
   "host_permissions": [
     "https://github.com/*",
     "https://www.google.com/*",

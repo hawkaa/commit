@@ -41,6 +41,7 @@ async fn main() {
             post(routes::endorsement::submit_endorsement)
                 .get(routes::endorsement::get_endorsements),
         )
+        .route("/privacy", get(routes::privacy::get_privacy_page))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
