@@ -1,0 +1,108 @@
+/* Commit Trust Card — injected into host pages */
+/* Design system: DESIGN.md */
+
+.commit-trust-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  margin: 8px 0;
+  border-radius: 6px;
+  font-family: 'Geist', -apple-system, system-ui, sans-serif;
+  transition: opacity 150ms ease-out;
+}
+
+/* Light context (Google SERP) */
+.commit-trust-card--light {
+  background: rgba(22, 163, 74, 0.06);
+  border: 1px solid rgba(22, 163, 74, 0.15);
+}
+
+/* Dark context (GitHub dark mode) */
+.commit-trust-card--dark {
+  background: rgba(22, 163, 74, 0.08);
+  border: 1px solid rgba(22, 163, 74, 0.2);
+}
+
+/* Skeleton loading state */
+.commit-trust-card--loading {
+  background: #f5f5f0;
+  border: 1px solid #e5e5e0;
+  min-height: 48px;
+  animation: commit-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes commit-shimmer {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Score circle */
+.commit-score-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 800;
+  color: white;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.commit-score-circle--high {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+}
+
+.commit-score-circle--mid {
+  background: linear-gradient(135deg, #ca8a04, #a16207);
+}
+
+.commit-score-circle--none {
+  background: #6b7280;
+}
+
+/* SERP compact score */
+.commit-score-circle--compact {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+/* Details */
+.commit-card-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.commit-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #16a34a;
+}
+
+.commit-card-signals {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.commit-card-network {
+  font-size: 11px;
+  color: #7c3aed;
+  margin-top: 2px;
+}
+
+.commit-zk-tag {
+  font-size: 9px;
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  margin-left: 4px;
+}

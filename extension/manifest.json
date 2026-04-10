@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Commit — Trust Scores for Code",
+  "version": "0.1.0",
+  "description": "See behavioral trust signals alongside GitHub repos and search results. Commit Score shows what stars and ratings can't.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://www.google.com/*",
+    "https://www.google.no/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content-github.js"],
+      "css": ["trust-card.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.google.com/*", "https://www.google.no/*"],
+      "js": ["content-google.js"],
+      "css": ["trust-card.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

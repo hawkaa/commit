@@ -1,0 +1,48 @@
+mod models;
+mod routes;
+mod services;
+
+use std::sync::Mutex;
+
+use axum::{Router, routing::get};
+use services::{db::Database, github::GitHubClient};
+use tower_http::cors::CorsLayer;
+use tracing_subscriber::{EnvFilter, fmt};
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: std::sync::Arc<Mutex<Database>>,
+    pub github: std::sync::Arc<GitHubClient>,
+}
+
+#[tokio::main]
+async fn main() {
+    fmt()
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("commit_backend=info".parse().unwrap()),
+        )
+        .json()
+        .init();
+
+    let github_token = std::env::var("GITHUB_TOKEN").ok();
+    let db_path = std::env::var("DATABASE_PATH").unwrap_or_else(|_| "commit.db".to_string());
+
+    let db = Database::open(&db_path).expect("Failed to open database");
+    let github = GitHubClient::new(github_token);
+
+    let state = AppState {
+        db: std::sync::Arc::new(Mutex::new(db)),
+        github: std::sync::Arc::new(github),
+    };
+
+    let app = Router::new()
+        .route("/trust-card", get(routes::trust_card::get_trust_card))
+        .route("/badge/{kind}/{*id}", get(routes::badge::get_badge))
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    let addr = "0.0.0.0:3000";
+    tracing::info!("Commit backend listening on {addr}");
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
