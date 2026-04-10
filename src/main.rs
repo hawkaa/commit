@@ -1,19 +1,10 @@
-mod models;
-mod routes;
-mod services;
-
 use std::sync::Mutex;
 
 use axum::{Router, routing::get};
-use services::{db::Database, github::GitHubClient};
+use commit_backend::services::{db::Database, github::GitHubClient};
+use commit_backend::{AppState, routes};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{EnvFilter, fmt};
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db: std::sync::Arc<Mutex<Database>>,
-    pub github: std::sync::Arc<GitHubClient>,
-}
 
 #[tokio::main]
 async fn main() {

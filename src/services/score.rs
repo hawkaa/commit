@@ -6,6 +6,7 @@ use crate::models::signal::{
 };
 use crate::services::github::GitHubRepo;
 
+#[must_use]
 pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitScore {
     let years_active = years_since(&repo.created_at);
     let days_since_push = days_since(&repo.pushed_at);
@@ -37,6 +38,7 @@ pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitS
     }
 }
 
+#[must_use]
 pub fn build_signals(repo: &GitHubRepo, contributor_count: usize) -> Vec<CommitmentSignal> {
     let now = Utc::now().to_rfc3339();
     let years_active = years_since(&repo.created_at);

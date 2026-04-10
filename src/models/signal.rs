@@ -70,15 +70,18 @@ pub struct ScoreBreakdown {
 }
 
 impl ScoreBreakdown {
+    #[must_use]
     pub fn layer1_total(&self) -> f64 {
         self.longevity + self.maintenance + self.community + self.financial
     }
 
+    #[must_use]
     pub fn layer2_total(&self) -> f64 {
         self.endorsements + self.network_density + self.proof_strength + self.tenure
     }
 }
 
+#[must_use]
 pub fn compute_score(breakdown: &ScoreBreakdown, has_layer2: bool) -> Option<u8> {
     let l1 = breakdown.layer1_total();
     if l1 == 0.0 {

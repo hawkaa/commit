@@ -12,6 +12,7 @@ pub enum SubjectKind {
 }
 
 impl SubjectKind {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             SubjectKind::GithubRepo => "github_repo",
@@ -22,7 +23,8 @@ impl SubjectKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "github_repo" | "github" => Some(SubjectKind::GithubRepo),
             "npm_package" | "npm" => Some(SubjectKind::NpmPackage),

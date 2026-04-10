@@ -7,12 +7,13 @@ use axum::{
 use crate::AppState;
 use crate::models::{CommitScore, SubjectKind};
 
+#[allow(clippy::unused_async, clippy::missing_panics_doc)] // Axum handler
 pub async fn get_badge(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, String)>,
 ) -> impl IntoResponse {
     let id = id.trim_end_matches(".svg");
-    let subject_kind = SubjectKind::from_str(&kind);
+    let subject_kind = SubjectKind::parse(&kind);
 
     let score: Option<u8> = subject_kind.and_then(|kind| {
         let db = state.db.lock().ok()?;

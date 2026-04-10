@@ -23,11 +23,12 @@ pub struct TrustCardResponse {
     pub score: CommitScore,
 }
 
+#[allow(clippy::missing_errors_doc)] // Axum handler
 pub async fn get_trust_card(
     State(state): State<AppState>,
     Query(query): Query<TrustCardQuery>,
 ) -> Result<Json<TrustCardResponse>, StatusCode> {
-    let kind = SubjectKind::from_str(&query.kind).ok_or(StatusCode::BAD_REQUEST)?;
+    let kind = SubjectKind::parse(&query.kind).ok_or(StatusCode::BAD_REQUEST)?;
 
     match kind {
         SubjectKind::GithubRepo => get_github_trust_card(&state, &query.id).await,

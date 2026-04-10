@@ -9,6 +9,7 @@ pub struct Database {
     conn: Connection,
 }
 
+#[allow(clippy::missing_errors_doc)]
 impl Database {
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -63,7 +64,7 @@ impl Database {
             let kind_str: String = row.get(1)?;
             Ok(Subject {
                 id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
-                kind: SubjectKind::from_str(&kind_str).unwrap_or(SubjectKind::Service),
+                kind: SubjectKind::parse(&kind_str).unwrap_or(SubjectKind::Service),
                 identifier: row.get(2)?,
                 display_name: row.get(3)?,
                 endorsement_count: row.get(4)?,

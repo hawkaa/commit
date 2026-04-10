@@ -24,7 +24,9 @@ pub struct GitHubClient {
     token: Option<String>,
 }
 
+#[allow(clippy::missing_errors_doc)]
 impl GitHubClient {
+    #[must_use]
     pub fn new(token: Option<String>) -> Self {
         Self {
             client: Client::new(),
