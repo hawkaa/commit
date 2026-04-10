@@ -1,6 +1,9 @@
 use std::sync::Mutex;
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use commit_backend::services::{db::Database, github::GitHubClient};
 use commit_backend::{AppState, routes};
 use tower_http::cors::CorsLayer;
@@ -28,7 +31,16 @@ async fn main() {
 
     let app = Router::new()
         .route("/trust-card", get(routes::trust_card::get_trust_card))
+        .route(
+            "/trust/{kind}/{*id}",
+            get(routes::trust_page::get_trust_page),
+        )
         .route("/badge/{kind}/{*id}", get(routes::badge::get_badge))
+        .route(
+            "/endorsements",
+            post(routes::endorsement::submit_endorsement)
+                .get(routes::endorsement::get_endorsements),
+        )
         .layer(CorsLayer::permissive())
         .with_state(state);
 

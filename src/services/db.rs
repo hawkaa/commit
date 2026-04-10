@@ -9,10 +9,26 @@ pub struct Database {
     conn: Connection,
 }
 
+#[derive(Debug)]
+pub struct EndorsementRow {
+    pub id: String,
+    pub subject_id: String,
+    pub category: String,
+    pub proof_hash: Vec<u8>,
+    pub proof_type: String,
+    pub status: String,
+    pub created_at: String,
+}
+
 #[allow(clippy::missing_errors_doc)]
 impl Database {
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA busy_timeout=5000;
+             PRAGMA foreign_keys=ON;",
+        )?;
         let db = Self { conn };
         db.migrate()?;
         Ok(db)
@@ -49,9 +65,21 @@ impl Database {
                 FOREIGN KEY (subject_id) REFERENCES subjects(id)
             );
 
+            CREATE TABLE IF NOT EXISTS attestations (
+                id TEXT PRIMARY KEY,
+                endorsement_id TEXT NOT NULL,
+                tx_hash TEXT,
+                chain TEXT NOT NULL DEFAULT 'pending',
+                block_number INTEGER,
+                attested_at TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (endorsement_id) REFERENCES endorsements(id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_subjects_kind_id ON subjects(kind, identifier);
             CREATE INDEX IF NOT EXISTS idx_signal_cache_subject ON signal_cache(subject_id);
-            CREATE INDEX IF NOT EXISTS idx_endorsements_subject ON endorsements(subject_id);",
+            CREATE INDEX IF NOT EXISTS idx_endorsements_subject ON endorsements(subject_id);
+            CREATE INDEX IF NOT EXISTS idx_attestations_endorsement ON attestations(endorsement_id);",
         )
     }
 
@@ -82,8 +110,7 @@ impl Database {
             "INSERT INTO subjects (id, kind, identifier, display_name, endorsement_count)
              VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(kind, identifier) DO UPDATE SET
-                display_name = excluded.display_name,
-                endorsement_count = excluded.endorsement_count",
+                display_name = excluded.display_name",
             params![
                 subject.id.to_string(),
                 subject.kind.as_str(),
@@ -107,6 +134,82 @@ impl Database {
             params![subject_id.to_string(), signals_json, score_json],
         )?;
         Ok(())
+    }
+
+    pub fn create_endorsement(
+        &self,
+        id: &Uuid,
+        subject_id: &Uuid,
+        category: &str,
+        proof_hash: &[u8],
+        proof_type: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type)
+             VALUES (?, ?, ?, ?, ?)",
+            params![
+                id.to_string(),
+                subject_id.to_string(),
+                category,
+                proof_hash,
+                proof_type,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_endorsements_for_subject(&self, subject_id: &Uuid) -> Result<Vec<EndorsementRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at
+             FROM endorsements WHERE subject_id = ? ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![subject_id.to_string()], |row| {
+            Ok(EndorsementRow {
+                id: row.get(0)?,
+                subject_id: row.get(1)?,
+                category: row.get(2)?,
+                proof_hash: row.get(3)?,
+                proof_type: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn update_endorsement_status(&self, id: &Uuid, status: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE endorsements SET status = ? WHERE id = ?",
+            params![status, id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_attestation(&self, id: &Uuid, endorsement_id: &Uuid, chain: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO attestations (id, endorsement_id, chain)
+             VALUES (?, ?, ?)",
+            params![id.to_string(), endorsement_id.to_string(), chain],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_attestation_tx(&self, id: &Uuid, tx_hash: &str, block_number: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE attestations SET tx_hash = ?, block_number = ?, attested_at = datetime('now')
+             WHERE id = ?",
+            params![tx_hash, block_number, id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_endorsement_count(&self, subject_id: &Uuid) -> Result<u32> {
+        let count: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status != 'failed'",
+            params![subject_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok(count)
     }
 
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.
