@@ -1,7 +1,7 @@
 // Commit Trust Card — GitHub content script
 // Injects trust cards on github.com repo pages
 
-const API_BASE = "http://localhost:3000"; // TODO: production URL
+const API_BASE = "https://commit-backend.fly.dev";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 async function injectTrustCard() {
@@ -64,7 +64,7 @@ function createTrustCard(data) {
   circle.setAttribute("aria-label", `Commit Score ${scoreValue} out of 100`);
   circle.style.cursor = "pointer";
   circle.addEventListener("click", () => {
-    window.open(`https://commit.dev/trust/github/${subject.identifier}`, "_blank");
+    window.open(`https://commit-backend.fly.dev/trust/github/${subject.identifier}`, "_blank");
   });
 
   const details = document.createElement("div");

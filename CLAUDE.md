@@ -45,14 +45,14 @@ Do not deviate without explicit user approval.
 - [x] Chrome extension: content script for GitHub
 - [x] Chrome extension: content script for Google SERP
 - [x] Chrome extension: keypair generation
-- [ ] Deploy to Fly.io
+- [x] Deploy to Fly.io
 - [ ] Submit to Chrome Web Store
 
 ### Phase 1b — Growth surfaces (weeks 2-3)
 - [x] Trust card page (SSR)
 - [x] Badge SVG endpoint
-- [ ] MCP server (thin wrapper over trust-card API)
-- [ ] OG meta tags on trust card pages (social previews)
+- [x] MCP server (thin wrapper over trust-card API)
+- [x] OG meta tags on trust card pages (social previews)
 - [ ] L2 contract deployment
 
 ### Phase 2 — TLSNotary + Endorsements (weeks 3-6)

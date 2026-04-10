@@ -179,7 +179,7 @@ fn render_html(
   <meta property="og:title" content="{title}">
   <meta property="og:description" content="{description}">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="/badge/github/{owner}/{repo}.svg">
+  <meta property="og:image" content="https://commit-backend.fly.dev/badge/github/{owner}/{repo}.svg">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="{title}">
   <meta name="twitter:description" content="{description}">
