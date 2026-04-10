@@ -46,7 +46,7 @@ Do not deviate without explicit user approval.
 - [x] Chrome extension: content script for Google SERP
 - [x] Chrome extension: keypair generation
 - [x] Deploy to Fly.io
-- [ ] Submit to Chrome Web Store
+- [x] Submit to Chrome Web Store
 
 ### Phase 1b — Growth surfaces (weeks 2-3)
 - [x] Trust card page (SSR)
