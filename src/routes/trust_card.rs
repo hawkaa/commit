@@ -75,7 +75,10 @@ async fn get_github_trust_card(
         .github
         .get_repo(owner, repo_name)
         .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+        .map_err(|e| {
+            tracing::error!("GitHub API error for {owner}/{repo_name}: {e}");
+            StatusCode::BAD_GATEWAY
+        })?;
 
     let contributor_count = state
         .github

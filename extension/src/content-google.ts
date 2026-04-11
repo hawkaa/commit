@@ -1,15 +1,18 @@
 // Commit Trust Card — Google SERP content script
 // Injects compact trust cards next to search results that match known subjects
+import { API_BASE, CACHE_TTL_MS } from "./config";
 
-const API_BASE = "https://commit-backend.fly.dev";
-const CACHE_TTL_MS = 60 * 60 * 1000;
+interface SerpTrustCardData {
+  subject: { identifier: string };
+  score: { score: number | null };
+}
 
-async function injectSerp() {
+async function injectSerp(): Promise<void> {
   const results = document.querySelectorAll("#search .g");
   for (const result of results) {
     if (result.querySelector(".commit-trust-card")) continue;
 
-    const link = result.querySelector("a[href]");
+    const link = result.querySelector("a[href]") as HTMLAnchorElement | null;
     if (!link) continue;
 
     const repoId = extractGithubRepo(link.href);
@@ -21,7 +24,7 @@ async function injectSerp() {
 
       const card = createSerpCard(data);
       const snippet = result.querySelector("[data-sncf], .VwiC3b, .IsZvec");
-      if (snippet) {
+      if (snippet && snippet.parentNode) {
         snippet.parentNode.insertBefore(card, snippet.nextSibling);
       }
     } catch {
@@ -30,7 +33,7 @@ async function injectSerp() {
   }
 }
 
-function extractGithubRepo(url) {
+function extractGithubRepo(url: string): string | null {
   try {
     const u = new URL(url);
     if (!u.hostname.includes("github.com")) return null;
@@ -42,9 +45,9 @@ function extractGithubRepo(url) {
   }
 }
 
-function createSerpCard(data) {
+function createSerpCard(data: SerpTrustCardData): HTMLDivElement {
   const { subject, score } = data;
-  const scoreValue = score.score;
+  const scoreValue = score.score!;
   const tier = scoreValue > 70 ? "high" : scoreValue > 40 ? "mid" : "none";
 
   const card = document.createElement("div");
@@ -53,36 +56,53 @@ function createSerpCard(data) {
 
   const circle = document.createElement("div");
   circle.className = `commit-score-circle commit-score-circle--compact commit-score-circle--${tier}`;
-  circle.textContent = scoreValue;
+  circle.textContent = String(scoreValue);
   circle.style.cursor = "pointer";
   circle.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    window.open(`https://commit-backend.fly.dev/trust/github/${subject.identifier}`, "_blank");
+    window.open(
+      `${API_BASE}/trust/github/${subject.identifier}`,
+      "_blank"
+    );
   });
 
   const meta = document.createElement("span");
   meta.style.cssText = "font-size: 11px; color: #70757a; margin-left: 8px;";
-  meta.innerHTML = `<strong style="color: #1a1a2e;">Commit Score ${scoreValue}</strong>`;
+
+  const strong = document.createElement("strong");
+  strong.style.color = "#1a1a2e";
+  strong.textContent = `Commit Score ${scoreValue}`;
+  meta.appendChild(strong);
 
   card.appendChild(circle);
   card.appendChild(meta);
   return card;
 }
 
-async function fetchTrustCard(kind, id) {
+async function fetchTrustCard(
+  kind: string,
+  id: string
+): Promise<SerpTrustCardData | null> {
   const cacheKey = `trust-card:${kind}:${id}`;
   const cached = await chrome.storage.local.get(cacheKey);
   if (cached[cacheKey]) {
-    const { data, timestamp } = cached[cacheKey];
+    const { data, timestamp } = cached[cacheKey] as {
+      data: SerpTrustCardData;
+      timestamp: number;
+    };
     if (Date.now() - timestamp < CACHE_TTL_MS) return data;
   }
 
-  const resp = await fetch(`${API_BASE}/trust-card?kind=${kind}&id=${encodeURIComponent(id)}`);
+  const resp = await fetch(
+    `${API_BASE}/trust-card?kind=${kind}&id=${encodeURIComponent(id)}`
+  );
   if (!resp.ok) return null;
 
-  const data = await resp.json();
-  await chrome.storage.local.set({ [cacheKey]: { data, timestamp: Date.now() } });
+  const data: SerpTrustCardData = await resp.json();
+  await chrome.storage.local.set({
+    [cacheKey]: { data, timestamp: Date.now() },
+  });
   return data;
 }
 

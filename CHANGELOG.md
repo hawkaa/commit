@@ -2,6 +2,22 @@
 
 All notable changes to Commit will be documented in this file.
 
+## [0.1.1.0] - 2026-04-11
+
+### Added
+- TLSNotary MPC-TLS proving in Chrome extension via offscreen WASM document (~5s proof generation)
+- "Endorse" button on GitHub trust cards for ZK-verified endorsements
+- Webhook endpoint (POST /webhook/endorsement) for receiving verified proofs from TLSNotary verifier
+- Fail-closed webhook authentication with VERIFIER_WEBHOOK_SECRET
+- Server name validation per proof type (api.github.com for git_history, Google/Outlook for email)
+- Verifier server Fly.io deployment config (verifier/fly.toml)
+- 5 webhook endpoint tests (auth, validation, server name, 404)
+
+### Changed
+- Extension bumped to v0.2.0 with offscreen permission and wasm-unsafe-eval CSP
+- Replaced innerHTML with DOM construction in content script (XSS prevention)
+- Corrected ZK documentation: TLSNotary uses MPC-TLS + QuickSilver, not Halo2
+
 ## [0.1.0.0] - 2026-04-11
 
 ### Added
