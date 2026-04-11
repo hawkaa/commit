@@ -61,6 +61,8 @@ Do not deviate without explicit user approval.
 - [x] Backend webhook endpoint (POST /webhook/endorsement)
 - [ ] Own Notary server (Docker image + Fly.io, using public notary.pse.dev for PoC)
 - [ ] ZK-verified endorsement flow end-to-end
+- [ ] P0: Bind proof_hash to cryptographic attestation (currently hashes attacker-controlled payload fields)
+- [ ] P0: Bind session.data subject to proof transcript (proof for repo A can currently endorse repo B)
 - [ ] Network keyring + key sharing
 - [ ] L2 attestation for endorsements
 - [ ] Commit Score v2 (Layer 1 + Layer 2)
