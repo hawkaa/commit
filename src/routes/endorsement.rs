@@ -37,6 +37,10 @@ pub async fn submit_endorsement(
     validate_transcript_subject(&req.transcript_sent, &proof_type, &req.subject_id)?;
 
     // Decode attestation and compute proof_hash server-side
+    // Limit attestation size to prevent memory exhaustion (500KB decoded max)
+    if req.attestation.len() > 1_000_000 {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
     let attestation_bytes =
         hex::decode(&req.attestation).map_err(|_| StatusCode::BAD_REQUEST)?;
     if attestation_bytes.is_empty() {

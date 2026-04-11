@@ -95,9 +95,22 @@ impl Database {
         )?;
 
         // Migration: normalize existing identifiers to lowercase.
-        // Deduplicate case-insensitive collisions first (keep earliest by rowid).
+        // Deduplicate case-insensitive collisions: cascade-delete related rows first
+        // to avoid FK violations, then remove duplicate subjects.
         self.conn.execute_batch(
-            "DELETE FROM subjects WHERE rowid NOT IN (
+            "DELETE FROM attestations WHERE endorsement_id IN (
+                SELECT e.id FROM endorsements e
+                JOIN subjects s ON e.subject_id = s.id
+                WHERE s.rowid NOT IN (
+                    SELECT MIN(rowid) FROM subjects GROUP BY kind, LOWER(identifier)
+                )
+            );
+            DELETE FROM endorsements WHERE subject_id IN (
+                SELECT id FROM subjects WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM subjects GROUP BY kind, LOWER(identifier)
+                )
+            );
+            DELETE FROM subjects WHERE rowid NOT IN (
                 SELECT MIN(rowid) FROM subjects GROUP BY kind, LOWER(identifier)
             );
             UPDATE subjects SET identifier = LOWER(identifier)
@@ -121,8 +134,14 @@ impl Database {
             .and_then(|mut s| s.query_row([], |_| Ok(true)))
             .unwrap_or(false);
         if !has_unique_proof_hash {
+            // Cascade-delete attestations for duplicate endorsements, then dedup
             self.conn.execute_batch(
-                "DELETE FROM endorsements WHERE rowid NOT IN (
+                "DELETE FROM attestations WHERE endorsement_id IN (
+                    SELECT id FROM endorsements WHERE rowid NOT IN (
+                        SELECT MIN(rowid) FROM endorsements GROUP BY proof_hash
+                    )
+                );
+                DELETE FROM endorsements WHERE rowid NOT IN (
                     SELECT MIN(rowid) FROM endorsements GROUP BY proof_hash
                 );
                 CREATE UNIQUE INDEX idx_endorsements_unique_proof_hash ON endorsements(proof_hash);",

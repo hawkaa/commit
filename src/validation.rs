@@ -55,16 +55,16 @@ fn validate_git_history_transcript(
     }
     let path = parts[1];
 
-    // Find /repos/ prefix and extract owner/repo
-    let repos_prefix = "/repos/";
-    let after_repos = path.find(repos_prefix).map(|i| &path[i + repos_prefix.len()..]);
-    let after_repos = after_repos.ok_or_else(|| {
-        tracing::warn!("Transcript path missing /repos/ prefix: {path}");
-        StatusCode::BAD_REQUEST
-    })?;
+    // Strip query string before checking path prefix — prevents /repos/ in query from matching
+    let path_no_query = path.split('?').next().unwrap_or(path);
 
-    // Strip query string if present
-    let after_repos = after_repos.split('?').next().unwrap_or(after_repos);
+    // Require path to start with /repos/ (not just contain it anywhere)
+    let repos_prefix = "/repos/";
+    if !path_no_query.starts_with(repos_prefix) {
+        tracing::warn!("Transcript path missing /repos/ prefix: {path}");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let after_repos = &path_no_query[repos_prefix.len()..];
 
     // Split on / to get owner and repo
     let path_parts: Vec<&str> = after_repos.splitn(3, '/').collect();
@@ -143,6 +143,16 @@ mod tests {
     fn empty_transcript_rejected() {
         assert_eq!(
             validate_transcript_subject("", &ProofType::GitHistory, "owner/repo").unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn repos_in_query_string_rejected() {
+        // /repos/ must be at the start of the path, not inside a query parameter
+        let transcript = "GET /evil?x=/repos/victim/repo HTTP/1.1\r\nHost: api.github.com\r\n";
+        assert_eq!(
+            validate_transcript_subject(transcript, &ProofType::GitHistory, "victim/repo").unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }

@@ -124,6 +124,9 @@ pub async fn receive_endorsement_webhook(
 
     // Compute proof_hash: prefer attestation, fall back to strengthened result hash
     let (proof_hash, attestation_data) = if let Some(att_hex) = &payload.attestation {
+        if att_hex.len() > 1_000_000 {
+            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+        }
         let att_bytes = hex::decode(att_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
         if att_bytes.is_empty() {
             return Err(StatusCode::BAD_REQUEST);

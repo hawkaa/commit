@@ -438,3 +438,114 @@ async fn endorsement_post_email_proof_type_blocked() {
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
 }
+
+// --- Endorsement happy path + replay prevention tests ---
+
+#[tokio::test]
+#[serial]
+async fn webhook_happy_path_with_attestation_uses_attestation_hash() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-att") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-att");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+            "session": {
+                "id": "att-session",
+                "subject_kind": "github",
+                "subject_id": "att-org/att-repo",
+                "category": "usage",
+                "proof_type": "git_history"
+            },
+            "transcript": {
+                "sent": "GET /repos/att-org/att-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n"
+            },
+            "attestation": "deadbeef01020304"
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_backward_compat_no_attestation() {
+    // Webhook without attestation field falls back to hash_verification_results_with_transcript
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-compat") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-compat");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "compat-test"}],
+            "session": {
+                "id": "compat-session",
+                "subject_kind": "github",
+                "subject_id": "compat-org/compat-repo",
+                "category": "usage",
+                "proof_type": "git_history"
+            },
+            "transcript": {
+                "sent": "GET /repos/compat-org/compat-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n"
+            }
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_duplicate_attestation_returns_409() {
+    // Same attestation submitted twice should return 409 Conflict (replay prevention)
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-dup") };
+    let server = test_app();
+
+    let payload = serde_json::json!({
+        "server_name": "api.github.com",
+        "results": [{"type": "RECV", "part": "BODY", "value": "dup-test"}],
+        "session": {
+            "id": "dup-session",
+            "subject_kind": "github",
+            "subject_id": "dup-org/dup-repo",
+            "category": "usage",
+            "proof_type": "git_history"
+        },
+        "transcript": {
+            "sent": "GET /repos/dup-org/dup-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "recv": "HTTP/1.1 200 OK\r\n"
+        },
+        "attestation": "aabbccdd11223344"
+    });
+
+    // First submission: should succeed
+    let (name, value) = auth_header("test-secret-dup");
+    let resp1 = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&payload)
+        .await;
+    resp1.assert_status_ok();
+
+    // Second submission with same attestation: should return 409
+    let (name2, value2) = auth_header("test-secret-dup");
+    let resp2 = server
+        .post("/webhook/endorsement")
+        .add_header(name2, value2)
+        .json(&payload)
+        .await;
+    resp2.assert_status(axum::http::StatusCode::CONFLICT);
+
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
