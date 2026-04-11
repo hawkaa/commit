@@ -1,9 +1,6 @@
 // Commit Trust Card — Google SERP content script
 // Injects compact trust cards next to search results that match known subjects
-export {}; // Make this a module to avoid global scope conflicts
-
-const SERP_API_BASE = "https://commit-backend.fly.dev";
-const SERP_CACHE_TTL_MS = 60 * 60 * 1000;
+import { API_BASE, CACHE_TTL_MS } from "./config";
 
 interface SerpTrustCardData {
   subject: { identifier: string };
@@ -22,7 +19,7 @@ async function injectSerp(): Promise<void> {
     if (!repoId) continue;
 
     try {
-      const data = await fetchSerpTrustCard("github", repoId);
+      const data = await fetchTrustCard("github", repoId);
       if (!data || !data.score.score) continue;
 
       const card = createSerpCard(data);
@@ -65,7 +62,7 @@ function createSerpCard(data: SerpTrustCardData): HTMLDivElement {
     e.preventDefault();
     e.stopPropagation();
     window.open(
-      `${SERP_API_BASE}/trust/github/${subject.identifier}`,
+      `${API_BASE}/trust/github/${subject.identifier}`,
       "_blank"
     );
   });
@@ -83,7 +80,7 @@ function createSerpCard(data: SerpTrustCardData): HTMLDivElement {
   return card;
 }
 
-async function fetchSerpTrustCard(
+async function fetchTrustCard(
   kind: string,
   id: string
 ): Promise<SerpTrustCardData | null> {
@@ -94,11 +91,11 @@ async function fetchSerpTrustCard(
       data: SerpTrustCardData;
       timestamp: number;
     };
-    if (Date.now() - timestamp < SERP_CACHE_TTL_MS) return data;
+    if (Date.now() - timestamp < CACHE_TTL_MS) return data;
   }
 
   const resp = await fetch(
-    `${SERP_API_BASE}/trust-card?kind=${kind}&id=${encodeURIComponent(id)}`
+    `${API_BASE}/trust-card?kind=${kind}&id=${encodeURIComponent(id)}`
   );
   if (!resp.ok) return null;
 

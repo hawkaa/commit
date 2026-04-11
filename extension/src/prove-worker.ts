@@ -3,9 +3,7 @@
 // Webpack bundles this as a separate entry point, resolving all spawn worker paths.
 
 import init, { Prover, NotaryServer } from "tlsn-js";
-
-const NOTARY_URL = "https://notary.pse.dev/v0.1.0-alpha.12";
-const PROXY_BASE = "wss://notary.pse.dev/proxy";
+import { NOTARY_URL, PROXY_BASE } from "./config";
 
 let initialized = false;
 

@@ -1,9 +1,6 @@
 // Commit Trust Card — GitHub content script
 // Injects trust cards on github.com repo pages
-export {}; // Make this a module to avoid global scope conflicts
-
-const API_BASE = "https://commit-backend.fly.dev";
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+import { API_BASE, CACHE_TTL_MS } from "./config";
 
 interface TrustCardData {
   subject: { identifier: string; display_name: string };

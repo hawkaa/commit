@@ -37,7 +37,7 @@
   "web_accessible_resources": [
     {
       "resources": ["*.wasm", "tlsn-wasm/*.wasm", "tlsn-wasm/snippets/**/*.js"],
-      "matches": ["<all_urls>"]
+      "matches": ["https://github.com/*", "https://www.google.com/*", "https://www.google.no/*"]
     }
   ],
   "icons": {

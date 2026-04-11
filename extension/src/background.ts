@@ -1,7 +1,7 @@
 // Commit — Background service worker
 // Manages keypair, offscreen document for WASM proving, cache cleanup
 
-const API_BASE = "https://commit-backend.fly.dev";
+import { API_BASE } from "./config";
 
 interface EndorsementMessage {
   type: "START_ENDORSEMENT";

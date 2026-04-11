@@ -24,6 +24,7 @@ function getWorker() {
       reject(new Error("Worker crashed: " + e.message));
       pendingRequests.delete(id);
     }
+    worker = null; // Reset so next call creates a fresh worker
   };
   return worker;
 }

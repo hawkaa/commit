@@ -284,15 +284,67 @@ async fn webhook_invalid_server_name_returns_400() {
 
 #[tokio::test]
 #[serial]
-async fn webhook_unknown_subject_returns_404() {
+async fn webhook_happy_path_creates_endorsement() {
     unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-4") };
     let server = test_app();
     let (name, value) = auth_header("test-secret-4");
     let resp = server
         .post("/webhook/endorsement")
         .add_header(name, value)
-        .json(&webhook_payload("github", "nonexistent/repo", "git_history"))
+        .json(&webhook_payload("github", "test-org/test-repo", "git_history"))
         .await;
-    resp.assert_status(axum::http::StatusCode::NOT_FOUND);
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+    assert!(body["endorsement_id"].as_str().is_some());
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_email_valid_server_name_accepted() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-5");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "mail.google.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "email-proof"}],
+            "session": {
+                "id": "email-session",
+                "subject_kind": "github",
+                "subject_id": "email-org/email-repo",
+                "category": "usage",
+                "proof_type": "email"
+            }
+        }))
+        .await;
+    resp.assert_status_ok();
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_email_invalid_server_name_rejected() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-6") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-6");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "evil.com",
+            "results": [],
+            "session": {
+                "id": "s-email-bad",
+                "subject_kind": "github",
+                "subject_id": "some/repo",
+                "proof_type": "email"
+            }
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
 }

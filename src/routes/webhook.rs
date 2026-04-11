@@ -66,7 +66,8 @@ pub async fn receive_endorsement_webhook(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let expected = format!("Bearer {expected_token}");
-    if auth != expected {
+    // Constant-time comparison to prevent timing side-channel on the secret
+    if !constant_time_eq(auth.as_bytes(), expected.as_bytes()) {
         tracing::warn!("Webhook auth failed from verifier");
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -120,11 +121,19 @@ pub async fn receive_endorsement_webhook(
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Find or create the subject
+    // Find or create the subject (upsert so webhooks work for repos not yet viewed)
+    let candidate = crate::models::Subject {
+        id: Uuid::new_v4(),
+        kind: kind.clone(),
+        identifier: subject_id_str.to_string(),
+        display_name: subject_id_str.to_string(),
+        endorsement_count: 0,
+    };
+    let _ = db.upsert_subject(&candidate);
     let subject = db
         .find_subject(&kind, subject_id_str)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Create the endorsement with verified status
     let endorsement_id = Uuid::new_v4();
@@ -157,6 +166,17 @@ pub async fn receive_endorsement_webhook(
         endorsement_id: endorsement_id.to_string(),
         status: "verified".to_string(),
     }))
+}
+
+/// Constant-time byte comparison to prevent timing side-channel on webhook secret.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 /// Hash the verification results to produce a deterministic proof hash.
