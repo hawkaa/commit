@@ -36,6 +36,7 @@ RUN ["/bin/busybox", "--install", "-s", "/bin/"]
 COPY --from=builder /build/target/release/commit-backend /usr/local/bin/commit-backend
 
 RUN ["/bin/busybox", "mkdir", "-p", "/data", "/tmp"]
+RUN ["/bin/busybox", "chown", "-R", "nobody:nobody", "/data"]
 
 ENV DATABASE_PATH=/data/commit.db
 EXPOSE 3000
