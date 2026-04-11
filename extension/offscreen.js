@@ -29,8 +29,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 });
 
+async function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function handleProveEndorsement(msg) {
-  await ensureInit();
+  await withTimeout(ensureInit(), 30000, "WASM init");
 
   const { repoOwner, repoName } = msg;
   const serverDns = "api.github.com";
@@ -42,7 +54,7 @@ async function handleProveEndorsement(msg) {
 
   // Use the simplified Prover.notarize() static method
   // This does: setup → send request → get transcript → notarize
-  const presentationJSON = await TlsnProver.notarize({
+  const presentationJSON = await withTimeout(TlsnProver.notarize({
     url: apiUrl,
     notaryUrl: NOTARY_URL,
     websocketProxyUrl: proxyUrl,
@@ -57,7 +69,7 @@ async function handleProveEndorsement(msg) {
       sent: [{ start: 0, end: 200 }], // Request line + headers
       recv: [{ start: 0, end: 500 }], // Response status + partial body
     },
-  });
+  }), 60000, "MPC-TLS proving");
 
   const elapsed = Date.now() - startTime;
   console.log(`[commit-offscreen] Proof generated in ${elapsed}ms`);
