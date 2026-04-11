@@ -62,8 +62,15 @@ Do not deviate without explicit user approval.
 - [x] Backend webhook endpoint (POST /webhook/endorsement)
 - [ ] Own Notary server (Docker image + Fly.io, using public notary.pse.dev for PoC)
 - [ ] ZK-verified endorsement flow end-to-end
-- [ ] P0: Bind proof_hash to cryptographic attestation (currently hashes attacker-controlled payload fields)
-- [ ] P0: Bind session.data subject to proof transcript (proof for repo A can currently endorse repo B)
+- [ ] P0: Bind proof_hash to cryptographic attestation (currently hashes attacker-controlled payload fields) — see `docs/plans/2026-04-11-001-fix-proof-binding-security-plan.md`
+- [ ] P0: Bind session.data subject to proof transcript (proof for repo A can currently endorse repo B) — see same plan
+- [ ] Follow-up from P0 plan: email proof type transcript binding
+- [ ] Follow-up from P0 plan: ci_logs proof type transcript binding
+- [ ] Follow-up from P0 plan: full attestation signature verification (requires own notary server)
+- [ ] Follow-up from P0 plan: attestation nonce-based replay prevention / rate limiting
+- [ ] Follow-up from P0 plan: deprecate webhook hash_verification_results fallback
+- [ ] Follow-up from P0 plan: score integrity without device binding (weight pending_attestation lower, or require Ed25519 signing)
+- [ ] Follow-up from P0 plan: validate single HTTP request line in revealed transcript (pipelining defense)
 - [ ] Network keyring + key sharing
 - [ ] L2 attestation for endorsements
 - [ ] Commit Score v2 (Layer 1 + Layer 2)
