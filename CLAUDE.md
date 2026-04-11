@@ -16,7 +16,7 @@ Read these before making any implementation decisions:
 - **Backend:** Rust (axum, rusqlite, reqwest). Deploy to Fly.io.
 - **Extension:** Chrome Manifest V3. Content scripts for GitHub + Google SERP.
 - **Database:** SQLite (operational) + Ethereum L2 (attestation hashes).
-- **ZK proofs:** TLSNotary (endorsement proofs). Halo2 reserved for aggregation only.
+- **ZK proofs:** TLSNotary MPC-TLS + QuickSilver (endorsement proofs). WASM in offscreen document.
 
 ## Key Decisions
 
@@ -56,9 +56,11 @@ Do not deviate without explicit user approval.
 - [x] L2 contract deployment (Base Sepolia: `0x08AE2e7fd94130645725Afc69e9BE2140f2395d7`)
 
 ### Phase 2 — TLSNotary + Endorsements (weeks 3-6)
-- [ ] TLSNotary integration (tlsn-js)
-- [ ] Own Notary server
-- [ ] ZK-verified endorsement flow
+- [x] TLSNotary research spike (MPC-TLS, ~5s proving time benchmarked)
+- [x] Extension offscreen WASM integration (tlsn-wasm, offscreen.html/js)
+- [x] Backend webhook endpoint (POST /webhook/endorsement)
+- [ ] Own Notary server (Docker image + Fly.io, using public notary.pse.dev for PoC)
+- [ ] ZK-verified endorsement flow end-to-end
 - [ ] Network keyring + key sharing
 - [ ] L2 attestation for endorsements
 - [ ] Commit Score v2 (Layer 1 + Layer 2)

@@ -42,6 +42,10 @@ async fn main() {
                 .get(routes::endorsement::get_endorsements),
         )
         .route("/privacy", get(routes::privacy::get_privacy_page))
+        .route(
+            "/webhook/endorsement",
+            post(routes::webhook::receive_endorsement_webhook),
+        )
         .layer(CorsLayer::permissive())
         .with_state(state);
 

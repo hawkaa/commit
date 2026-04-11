@@ -1,0 +1,20 @@
+app = 'commit-verifier'
+primary_region = 'arn'
+
+[build]
+  image = 'ghcr.io/tlsnotary/tlsn/notary-server:v0.1.0-alpha.12'
+
+[env]
+  RUST_LOG = 'info'
+
+[http_service]
+  internal_port = 7047
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

@@ -1,5 +1,7 @@
 // Commit — Background service worker
-// Manages keypair, extension-side cache cleanup
+// Manages keypair, offscreen document for WASM proving, cache cleanup
+
+const API_BASE = "https://commit-backend.fly.dev";
 
 chrome.runtime.onInstalled.addListener(async () => {
   // Generate ed25519 keypair on first install
@@ -39,3 +41,90 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
   }
 });
+
+// === Offscreen Document Management ===
+
+let creatingOffscreen = null;
+
+async function ensureOffscreenDocument() {
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [chrome.runtime.getURL("offscreen.html")],
+  });
+
+  if (existingContexts.length > 0) return;
+
+  if (creatingOffscreen) {
+    await creatingOffscreen;
+    return;
+  }
+
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: "offscreen.html",
+    reasons: ["WORKERS"],
+    justification: "TLSNotary WASM proving for ZK endorsements",
+  });
+
+  await creatingOffscreen;
+  creatingOffscreen = null;
+  console.log("[commit] Offscreen document created");
+}
+
+// === Message Handling ===
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "START_ENDORSEMENT") {
+    handleStartEndorsement(msg)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true; // Keep channel open for async
+  }
+});
+
+async function handleStartEndorsement(msg) {
+  const { repoOwner, repoName } = msg;
+  console.log(`[commit] Starting endorsement for ${repoOwner}/${repoName}`);
+
+  // Ensure offscreen document is ready
+  await ensureOffscreenDocument();
+
+  // Send proving request to offscreen document
+  const result = await chrome.runtime.sendMessage({
+    type: "PROVE_ENDORSEMENT",
+    repoOwner,
+    repoName,
+  });
+
+  if (!result.success) {
+    console.error("[commit] Proof generation failed:", result.error);
+    return result;
+  }
+
+  console.log(`[commit] Proof generated in ${result.elapsed}ms`);
+
+  // Submit the verified endorsement to the backend
+  try {
+    const resp = await fetch(`${API_BASE}/endorsements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_kind: "github",
+        subject_id: `${repoOwner}/${repoName}`,
+        category: "usage",
+        proof_hash: result.proofHash,
+        proof_type: "git_history",
+      }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      return { success: false, error: `Backend error: ${resp.status} ${text}` };
+    }
+
+    const endorsement = await resp.json();
+    console.log(`[commit] Endorsement created: ${endorsement.id}`);
+    return { success: true, endorsementId: endorsement.id, elapsed: result.elapsed };
+  } catch (err) {
+    return { success: false, error: `Network error: ${err.message}` };
+  }
+}

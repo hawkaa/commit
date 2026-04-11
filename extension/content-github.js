@@ -74,9 +74,54 @@ function createTrustCard(data) {
     <div class="commit-card-signals">${formatSignals(score.breakdown)}</div>
   `;
 
+  // Endorse button (ZK-verified via TLSNotary)
+  const endorseBtn = document.createElement("button");
+  endorseBtn.className = "commit-endorse-btn";
+  endorseBtn.textContent = "Endorse";
+  endorseBtn.title = "Create a ZK-verified endorsement for this repo";
+  endorseBtn.addEventListener("click", () => startEndorsement(subject.identifier, endorseBtn));
+
   card.appendChild(circle);
   card.appendChild(details);
+  card.appendChild(endorseBtn);
   return card;
+}
+
+async function startEndorsement(repoId, btn) {
+  const [owner, name] = repoId.split("/");
+  btn.disabled = true;
+  btn.textContent = "Proving...";
+  btn.classList.add("commit-endorse-btn--active");
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: "START_ENDORSEMENT",
+      repoOwner: owner,
+      repoName: name,
+    });
+
+    if (result.success) {
+      btn.textContent = "Endorsed";
+      btn.classList.remove("commit-endorse-btn--active");
+      btn.classList.add("commit-endorse-btn--done");
+    } else {
+      btn.textContent = "Failed";
+      btn.disabled = false;
+      console.error("[commit] Endorsement failed:", result.error);
+      setTimeout(() => {
+        btn.textContent = "Endorse";
+        btn.classList.remove("commit-endorse-btn--active");
+      }, 3000);
+    }
+  } catch (err) {
+    btn.textContent = "Error";
+    btn.disabled = false;
+    console.error("[commit] Endorsement error:", err);
+    setTimeout(() => {
+      btn.textContent = "Endorse";
+      btn.classList.remove("commit-endorse-btn--active");
+    }, 3000);
+  }
 }
 
 function formatSignals(breakdown) {

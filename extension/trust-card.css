@@ -106,3 +106,39 @@
   font-weight: 500;
   margin-left: 4px;
 }
+
+/* Endorse button */
+.commit-endorse-btn {
+  font-family: 'Geist', -apple-system, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  background: rgba(124, 58, 237, 0.08);
+  color: #7c3aed;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease-out;
+}
+
+.commit-endorse-btn:hover {
+  background: rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+.commit-endorse-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.commit-endorse-btn--active {
+  background: rgba(124, 58, 237, 0.15);
+  animation: commit-shimmer 1.5s ease-in-out infinite;
+}
+
+.commit-endorse-btn--done {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.3);
+  color: #16a34a;
+}
