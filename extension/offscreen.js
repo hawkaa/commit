@@ -7,11 +7,13 @@ const PROXY_BASE = "wss://notary.pse.dev/proxy";
 
 let initialized = false;
 
+// UMD bundle attaches `default` (the init fn) and `Prover` to window
+const tlsnInit = self["default"];
+const TlsnProver = self["Prover"];
+
 async function ensureInit() {
   if (initialized) return;
-  // tlsn.js (UMD) attaches exports to `this` (window)
-  // init() sets up the WASM module
-  await init({ loggingLevel: "Info" });
+  await tlsnInit({ loggingLevel: "Info" });
   initialized = true;
   console.log("[commit-offscreen] WASM initialized");
 }
@@ -40,7 +42,7 @@ async function handleProveEndorsement(msg) {
 
   // Use the simplified Prover.notarize() static method
   // This does: setup → send request → get transcript → notarize
-  const presentationJSON = await Prover.notarize({
+  const presentationJSON = await TlsnProver.notarize({
     url: apiUrl,
     notaryUrl: NOTARY_URL,
     websocketProxyUrl: proxyUrl,
