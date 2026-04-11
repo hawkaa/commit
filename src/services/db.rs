@@ -1,7 +1,19 @@
+use axum::http::StatusCode;
 use rusqlite::{Connection, Result, params};
 use uuid::Uuid;
 
 use crate::models::{Subject, SubjectKind};
+
+/// Map a rusqlite error to an HTTP status code.
+/// Returns 409 Conflict for unique constraint violations, 500 otherwise.
+pub fn map_db_error(e: rusqlite::Error) -> StatusCode {
+    if let rusqlite::Error::SqliteFailure(err, _) = &e
+        && err.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
+    {
+        return StatusCode::CONFLICT;
+    }
+    StatusCode::INTERNAL_SERVER_ERROR
+}
 
 const CACHE_TTL_SECS: i64 = 3600; // 1 hour
 
@@ -80,15 +92,72 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_signal_cache_subject ON signal_cache(subject_id);
             CREATE INDEX IF NOT EXISTS idx_endorsements_subject ON endorsements(subject_id);
             CREATE INDEX IF NOT EXISTS idx_attestations_endorsement ON attestations(endorsement_id);",
-        )
+        )?;
+
+        // Migration: normalize existing identifiers to lowercase.
+        // Deduplicate case-insensitive collisions: cascade-delete related rows first
+        // to avoid FK violations, then remove duplicate subjects.
+        self.conn.execute_batch(
+            "DELETE FROM attestations WHERE endorsement_id IN (
+                SELECT e.id FROM endorsements e
+                JOIN subjects s ON e.subject_id = s.id
+                WHERE s.rowid NOT IN (
+                    SELECT MIN(rowid) FROM subjects GROUP BY kind, LOWER(identifier)
+                )
+            );
+            DELETE FROM endorsements WHERE subject_id IN (
+                SELECT id FROM subjects WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM subjects GROUP BY kind, LOWER(identifier)
+                )
+            );
+            DELETE FROM subjects WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM subjects GROUP BY kind, LOWER(identifier)
+            );
+            UPDATE subjects SET identifier = LOWER(identifier)
+                WHERE identifier != LOWER(identifier);",
+        )?;
+
+        // Migration: add attestation_data column and unique proof_hash constraint.
+        // Deduplicate existing proof_hash collisions before adding constraint.
+        let has_attestation_col: bool = self
+            .conn
+            .prepare("SELECT attestation_data FROM endorsements LIMIT 0")
+            .is_ok();
+        if !has_attestation_col {
+            self.conn.execute_batch(
+                "ALTER TABLE endorsements ADD COLUMN attestation_data BLOB;",
+            )?;
+        }
+        let has_unique_proof_hash: bool = self
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_endorsements_unique_proof_hash'")
+            .and_then(|mut s| s.query_row([], |_| Ok(true)))
+            .unwrap_or(false);
+        if !has_unique_proof_hash {
+            // Cascade-delete attestations for duplicate endorsements, then dedup
+            self.conn.execute_batch(
+                "DELETE FROM attestations WHERE endorsement_id IN (
+                    SELECT id FROM endorsements WHERE rowid NOT IN (
+                        SELECT MIN(rowid) FROM endorsements GROUP BY proof_hash
+                    )
+                );
+                DELETE FROM endorsements WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM endorsements GROUP BY proof_hash
+                );
+                CREATE UNIQUE INDEX idx_endorsements_unique_proof_hash ON endorsements(proof_hash);",
+            )?;
+        }
+
+        Ok(())
     }
 
     pub fn find_subject(&self, kind: &SubjectKind, identifier: &str) -> Result<Option<Subject>> {
+        let normalized = identifier.to_lowercase();
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, identifier, display_name, endorsement_count \
              FROM subjects WHERE kind = ? AND identifier = ?",
         )?;
-        let result = stmt.query_row(params![kind.as_str(), identifier], |row| {
+        let result = stmt.query_row(params![kind.as_str(), normalized], |row| {
             let kind_str: String = row.get(1)?;
             Ok(Subject {
                 id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
@@ -106,6 +175,7 @@ impl Database {
     }
 
     pub fn upsert_subject(&self, subject: &Subject) -> Result<()> {
+        let normalized_id = subject.identifier.to_lowercase();
         self.conn.execute(
             "INSERT INTO subjects (id, kind, identifier, display_name, endorsement_count)
              VALUES (?, ?, ?, ?, ?)
@@ -114,7 +184,7 @@ impl Database {
             params![
                 subject.id.to_string(),
                 subject.kind.as_str(),
-                subject.identifier,
+                normalized_id,
                 subject.display_name,
                 subject.endorsement_count,
             ],
@@ -143,16 +213,18 @@ impl Database {
         category: &str,
         proof_hash: &[u8],
         proof_type: &str,
+        attestation_data: Option<&[u8]>,
     ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type, attestation_data)
+             VALUES (?, ?, ?, ?, ?, ?)",
             params![
                 id.to_string(),
                 subject_id.to_string(),
                 category,
                 proof_hash,
                 proof_type,
+                attestation_data,
             ],
         )?;
         Ok(())

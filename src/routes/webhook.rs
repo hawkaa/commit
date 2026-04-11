@@ -6,6 +6,8 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
+use crate::services::db::map_db_error;
+use crate::validation::validate_transcript_subject;
 
 /// Webhook payload from the TLSNotary verifier server.
 /// Sent after successful MPC-TLS verification of an endorsement proof.
@@ -14,7 +16,11 @@ pub struct VerifierWebhook {
     pub server_name: String,
     pub results: Vec<HandlerResult>,
     pub session: SessionInfo,
-    pub transcript: Option<RedactedTranscript>,
+    pub transcript: RedactedTranscript,
+    /// Raw attestation from TLSNotary (hex-encoded). Optional for backward
+    /// compatibility with notary servers that don't yet send it.
+    /// TODO: require once own notary server is deployed.
+    pub attestation: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -34,7 +40,7 @@ pub struct SessionInfo {
 
 #[derive(Deserialize)]
 pub struct RedactedTranscript {
-    pub sent: Option<String>,
+    pub sent: String,
     pub recv: Option<String>,
 }
 
@@ -98,6 +104,9 @@ pub async fn receive_endorsement_webhook(
 
     let kind = SubjectKind::parse(subject_kind_str).ok_or(StatusCode::BAD_REQUEST)?;
 
+    // Validate transcript matches claimed subject (unconditional — always required)
+    validate_transcript_subject(&payload.transcript.sent, &proof_type, subject_id_str)?;
+
     // Validate the server_name matches expected target for proof type
     let valid_server = match proof_type_str {
         "git_history" | "ci_logs" => payload.server_name == "api.github.com",
@@ -113,8 +122,22 @@ pub async fn receive_endorsement_webhook(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Hash the verified results to produce a proof_hash
-    let proof_hash = hash_verification_results(&payload);
+    // Compute proof_hash: prefer attestation, fall back to strengthened result hash
+    let (proof_hash, attestation_data) = if let Some(att_hex) = &payload.attestation {
+        if att_hex.len() > 1_000_000 {
+            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+        }
+        let att_bytes = hex::decode(att_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+        if att_bytes.is_empty() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        let hash = Sha256::digest(&att_bytes).to_vec();
+        (hash, Some(att_bytes))
+    } else {
+        // TODO: remove this fallback once own notary server sends attestation
+        let hash = hash_verification_results_with_transcript(&payload);
+        (hash, None)
+    };
 
     let db = state
         .db
@@ -143,8 +166,9 @@ pub async fn receive_endorsement_webhook(
         category.as_str(),
         &proof_hash,
         proof_type.as_str(),
+        attestation_data.as_deref(),
     )
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(map_db_error)?;
 
     // Mark as verified (proof already confirmed by verifier)
     db.update_endorsement_status(&endorsement_id, "verified")
@@ -179,11 +203,14 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         == 0
 }
 
-/// Hash the verification results to produce a deterministic proof hash.
-fn hash_verification_results(payload: &VerifierWebhook) -> Vec<u8> {
+/// Hash verification results plus transcript to produce a deterministic proof hash.
+/// Includes transcript.sent to strengthen binding when attestation is not available.
+/// TODO: remove once own notary server sends attestation data.
+fn hash_verification_results_with_transcript(payload: &VerifierWebhook) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(payload.server_name.as_bytes());
     hasher.update(payload.session.id.as_bytes());
+    hasher.update(payload.transcript.sent.as_bytes());
     for result in &payload.results {
         hasher.update(result.handler_type.as_bytes());
         hasher.update(result.part.as_bytes());

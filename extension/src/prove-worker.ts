@@ -63,11 +63,21 @@ self.onmessage = async (e: MessageEvent<ProveRequest>) => {
     const elapsed = Date.now() - startTime;
     console.log(`[prove-worker] Proof generated in ${elapsed}ms`);
 
+    // Send the full attestation for server-side proof_hash derivation.
+    // The backend expects transcript_sent as the raw HTTP request text
+    // (the revealed portion). Convert from the transcript's native format.
+    const raw = transcript.sent;
+    const sentBytes = new Uint8Array(
+      raw instanceof Uint8Array ? raw : Array.isArray(raw) ? raw : []
+    );
+    const transcriptSent = new TextDecoder().decode(sentBytes.slice(0, 200));
+
     self.postMessage({
       type: "result",
       requestId,
       success: true,
-      proofHash: notarization.attestation.substring(0, 64),
+      attestation: notarization.attestation,
+      transcriptSent: transcriptSent,
       elapsed,
     });
   } catch (err: unknown) {

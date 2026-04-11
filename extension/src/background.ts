@@ -11,7 +11,8 @@ interface EndorsementMessage {
 
 interface ProveResult {
   success: boolean;
-  proofHash?: string;
+  attestation?: string;
+  transcriptSent?: string;
   elapsed?: number;
   error?: string;
 }
@@ -128,8 +129,9 @@ async function handleStartEndorsement(
         subject_kind: "github",
         subject_id: `${repoOwner}/${repoName}`,
         category: "usage",
-        proof_hash: result.proofHash,
+        attestation: result.attestation,
         proof_type: "git_history",
+        transcript_sent: result.transcriptSent,
       }),
     });
 
@@ -142,7 +144,7 @@ async function handleStartEndorsement(
     console.log(`[commit] Endorsement created: ${endorsement.id}`);
     return {
       success: true,
-      proofHash: result.proofHash,
+      attestation: result.attestation,
       elapsed: result.elapsed,
     };
   } catch (err) {
