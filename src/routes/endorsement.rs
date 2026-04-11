@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
+use crate::validation::validate_transcript_subject;
 
 #[derive(Deserialize)]
 pub struct SubmitEndorsementRequest {
@@ -12,6 +13,7 @@ pub struct SubmitEndorsementRequest {
     pub category: String,
     pub proof_hash: String,
     pub proof_type: String,
+    pub transcript_sent: String,
 }
 
 #[derive(Serialize)]
@@ -28,6 +30,9 @@ pub async fn submit_endorsement(
     let kind = SubjectKind::parse(&req.subject_kind).ok_or(StatusCode::BAD_REQUEST)?;
     let category = EndorsementCategory::parse(&req.category).ok_or(StatusCode::BAD_REQUEST)?;
     let proof_type = ProofType::parse(&req.proof_type).ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Validate transcript matches claimed subject
+    validate_transcript_subject(&req.transcript_sent, &proof_type, &req.subject_id)?;
 
     // Decode hex proof hash
     let proof_bytes = hex::decode(&req.proof_hash).map_err(|_| StatusCode::BAD_REQUEST)?;

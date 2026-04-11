@@ -162,7 +162,8 @@ async fn endorsement_post_unknown_subject_returns_404() {
             "subject_id": "nonexistent/repo",
             "category": "usage",
             "proof_hash": "abcd1234",
-            "proof_type": "git_history"
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/nonexistent/repo HTTP/1.1\r\nHost: api.github.com\r\n"
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::NOT_FOUND);
@@ -178,7 +179,8 @@ async fn endorsement_post_invalid_hex_returns_400() {
             "subject_id": "owner/repo",
             "category": "usage",
             "proof_hash": "not-hex!!",
-            "proof_type": "git_history"
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n"
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
@@ -200,6 +202,10 @@ fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> se
             "subject_id": subject_id,
             "category": "usage",
             "proof_type": proof_type
+        },
+        "transcript": {
+            "sent": format!("GET /repos/{subject_id} HTTP/1.1\r\nHost: api.github.com\r\n"),
+            "recv": "HTTP/1.1 200 OK\r\n"
         }
     })
 }
@@ -251,7 +257,8 @@ async fn webhook_missing_subject_kind_returns_400() {
         .json(&serde_json::json!({
             "server_name": "api.github.com",
             "results": [],
-            "session": { "id": "s1" }
+            "session": { "id": "s1" },
+            "transcript": { "sent": "GET / HTTP/1.1\r\n", "recv": "" }
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
@@ -275,6 +282,10 @@ async fn webhook_invalid_server_name_returns_400() {
                 "subject_kind": "github",
                 "subject_id": "owner/repo",
                 "proof_type": "git_history"
+            },
+            "transcript": {
+                "sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: evil.com\r\n",
+                "recv": ""
             }
         }))
         .await;
@@ -302,7 +313,8 @@ async fn webhook_happy_path_creates_endorsement() {
 
 #[tokio::test]
 #[serial]
-async fn webhook_email_valid_server_name_accepted() {
+async fn webhook_email_proof_type_blocked() {
+    // Email proof type is blocked until transcript binding is designed
     unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5") };
     let server = test_app();
     let (name, value) = auth_header("test-secret-5");
@@ -318,33 +330,94 @@ async fn webhook_email_valid_server_name_accepted() {
                 "subject_id": "email-org/email-repo",
                 "category": "usage",
                 "proof_type": "email"
-            }
-        }))
-        .await;
-    resp.assert_status_ok();
-    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
-}
-
-#[tokio::test]
-#[serial]
-async fn webhook_email_invalid_server_name_rejected() {
-    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-6") };
-    let server = test_app();
-    let (name, value) = auth_header("test-secret-6");
-    let resp = server
-        .post("/webhook/endorsement")
-        .add_header(name, value)
-        .json(&serde_json::json!({
-            "server_name": "evil.com",
-            "results": [],
-            "session": {
-                "id": "s-email-bad",
-                "subject_kind": "github",
-                "subject_id": "some/repo",
-                "proof_type": "email"
+            },
+            "transcript": {
+                "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n",
+                "recv": ""
             }
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+// --- Transcript-subject binding tests ---
+
+#[tokio::test]
+#[serial]
+async fn webhook_transcript_subject_mismatch_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-7") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-7");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+            "session": {
+                "id": "mismatch-session",
+                "subject_kind": "github",
+                "subject_id": "owner/repoB",
+                "proof_type": "git_history"
+            },
+            "transcript": {
+                "sent": "GET /repos/owner/repoA HTTP/1.1\r\nHost: api.github.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n"
+            }
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+async fn endorsement_post_transcript_mismatch_returns_400() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repoB",
+            "category": "usage",
+            "proof_hash": "abcd1234",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/owner/repoA HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn endorsement_post_empty_transcript_returns_400() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "proof_hash": "abcd1234",
+            "proof_type": "git_history",
+            "transcript_sent": ""
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn endorsement_post_email_proof_type_blocked() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "proof_hash": "abcd1234",
+            "proof_type": "email",
+            "transcript_sent": "GET / HTTP/1.1\r\n"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
 }

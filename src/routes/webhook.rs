@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
+use crate::validation::validate_transcript_subject;
 
 /// Webhook payload from the TLSNotary verifier server.
 /// Sent after successful MPC-TLS verification of an endorsement proof.
@@ -14,7 +15,7 @@ pub struct VerifierWebhook {
     pub server_name: String,
     pub results: Vec<HandlerResult>,
     pub session: SessionInfo,
-    pub transcript: Option<RedactedTranscript>,
+    pub transcript: RedactedTranscript,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -34,7 +35,7 @@ pub struct SessionInfo {
 
 #[derive(Deserialize)]
 pub struct RedactedTranscript {
-    pub sent: Option<String>,
+    pub sent: String,
     pub recv: Option<String>,
 }
 
@@ -97,6 +98,9 @@ pub async fn receive_endorsement_webhook(
     let proof_type = ProofType::parse(proof_type_str).ok_or(StatusCode::BAD_REQUEST)?;
 
     let kind = SubjectKind::parse(subject_kind_str).ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Validate transcript matches claimed subject (unconditional — always required)
+    validate_transcript_subject(&payload.transcript.sent, &proof_type, subject_id_str)?;
 
     // Validate the server_name matches expected target for proof type
     let valid_server = match proof_type_str {
