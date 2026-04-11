@@ -80,15 +80,28 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_signal_cache_subject ON signal_cache(subject_id);
             CREATE INDEX IF NOT EXISTS idx_endorsements_subject ON endorsements(subject_id);
             CREATE INDEX IF NOT EXISTS idx_attestations_endorsement ON attestations(endorsement_id);",
-        )
+        )?;
+
+        // Migration: normalize existing identifiers to lowercase.
+        // Deduplicate case-insensitive collisions first (keep earliest by rowid).
+        self.conn.execute_batch(
+            "DELETE FROM subjects WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM subjects GROUP BY kind, LOWER(identifier)
+            );
+            UPDATE subjects SET identifier = LOWER(identifier)
+                WHERE identifier != LOWER(identifier);",
+        )?;
+
+        Ok(())
     }
 
     pub fn find_subject(&self, kind: &SubjectKind, identifier: &str) -> Result<Option<Subject>> {
+        let normalized = identifier.to_lowercase();
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, identifier, display_name, endorsement_count \
              FROM subjects WHERE kind = ? AND identifier = ?",
         )?;
-        let result = stmt.query_row(params![kind.as_str(), identifier], |row| {
+        let result = stmt.query_row(params![kind.as_str(), normalized], |row| {
             let kind_str: String = row.get(1)?;
             Ok(Subject {
                 id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
@@ -106,6 +119,7 @@ impl Database {
     }
 
     pub fn upsert_subject(&self, subject: &Subject) -> Result<()> {
+        let normalized_id = subject.identifier.to_lowercase();
         self.conn.execute(
             "INSERT INTO subjects (id, kind, identifier, display_name, endorsement_count)
              VALUES (?, ?, ?, ?, ?)
@@ -114,7 +128,7 @@ impl Database {
             params![
                 subject.id.to_string(),
                 subject.kind.as_str(),
-                subject.identifier,
+                normalized_id,
                 subject.display_name,
                 subject.endorsement_count,
             ],
