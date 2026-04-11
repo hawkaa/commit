@@ -70,5 +70,10 @@ module.exports = (env, argv) => {
 
     devtool: isDev ? "cheap-module-source-map" : false,
     optimization: { minimize: !isDev },
+    performance: {
+      // WASM binary is 9MB, can't be reduced. Suppress the warning.
+      maxAssetSize: 10 * 1024 * 1024,
+      maxEntrypointSize: 10 * 1024 * 1024,
+    },
   };
 };
