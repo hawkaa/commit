@@ -161,7 +161,7 @@ async fn endorsement_post_unknown_subject_returns_404() {
             "subject_kind": "github",
             "subject_id": "nonexistent/repo",
             "category": "usage",
-            "proof_hash": "abcd1234",
+            "attestation": "abcd1234",
             "proof_type": "git_history",
             "transcript_sent": "GET /repos/nonexistent/repo HTTP/1.1\r\nHost: api.github.com\r\n"
         }))
@@ -170,7 +170,7 @@ async fn endorsement_post_unknown_subject_returns_404() {
 }
 
 #[tokio::test]
-async fn endorsement_post_invalid_hex_returns_400() {
+async fn endorsement_post_invalid_attestation_hex_returns_400() {
     let server = test_app();
     let resp = server
         .post("/endorsements")
@@ -178,7 +178,7 @@ async fn endorsement_post_invalid_hex_returns_400() {
             "subject_kind": "github",
             "subject_id": "owner/repo",
             "category": "usage",
-            "proof_hash": "not-hex!!",
+            "attestation": "not-hex!!",
             "proof_type": "git_history",
             "transcript_sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n"
         }))
@@ -380,7 +380,7 @@ async fn endorsement_post_transcript_mismatch_returns_400() {
             "subject_kind": "github",
             "subject_id": "owner/repoB",
             "category": "usage",
-            "proof_hash": "abcd1234",
+            "attestation": "abcd1234",
             "proof_type": "git_history",
             "transcript_sent": "GET /repos/owner/repoA HTTP/1.1\r\nHost: api.github.com\r\n"
         }))
@@ -397,9 +397,26 @@ async fn endorsement_post_empty_transcript_returns_400() {
             "subject_kind": "github",
             "subject_id": "owner/repo",
             "category": "usage",
-            "proof_hash": "abcd1234",
+            "attestation": "abcd1234",
             "proof_type": "git_history",
             "transcript_sent": ""
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn endorsement_post_empty_attestation_returns_400() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "attestation": "",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n"
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
@@ -414,7 +431,7 @@ async fn endorsement_post_email_proof_type_blocked() {
             "subject_kind": "github",
             "subject_id": "owner/repo",
             "category": "usage",
-            "proof_hash": "abcd1234",
+            "attestation": "abcd1234",
             "proof_type": "email",
             "transcript_sent": "GET / HTTP/1.1\r\n"
         }))

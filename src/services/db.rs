@@ -1,7 +1,19 @@
+use axum::http::StatusCode;
 use rusqlite::{Connection, Result, params};
 use uuid::Uuid;
 
 use crate::models::{Subject, SubjectKind};
+
+/// Map a rusqlite error to an HTTP status code.
+/// Returns 409 Conflict for unique constraint violations, 500 otherwise.
+pub fn map_db_error(e: rusqlite::Error) -> StatusCode {
+    if let rusqlite::Error::SqliteFailure(err, _) = &e
+        && err.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
+    {
+        return StatusCode::CONFLICT;
+    }
+    StatusCode::INTERNAL_SERVER_ERROR
+}
 
 const CACHE_TTL_SECS: i64 = 3600; // 1 hour
 
@@ -92,6 +104,31 @@ impl Database {
                 WHERE identifier != LOWER(identifier);",
         )?;
 
+        // Migration: add attestation_data column and unique proof_hash constraint.
+        // Deduplicate existing proof_hash collisions before adding constraint.
+        let has_attestation_col: bool = self
+            .conn
+            .prepare("SELECT attestation_data FROM endorsements LIMIT 0")
+            .is_ok();
+        if !has_attestation_col {
+            self.conn.execute_batch(
+                "ALTER TABLE endorsements ADD COLUMN attestation_data BLOB;",
+            )?;
+        }
+        let has_unique_proof_hash: bool = self
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_endorsements_unique_proof_hash'")
+            .and_then(|mut s| s.query_row([], |_| Ok(true)))
+            .unwrap_or(false);
+        if !has_unique_proof_hash {
+            self.conn.execute_batch(
+                "DELETE FROM endorsements WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM endorsements GROUP BY proof_hash
+                );
+                CREATE UNIQUE INDEX idx_endorsements_unique_proof_hash ON endorsements(proof_hash);",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -157,16 +194,18 @@ impl Database {
         category: &str,
         proof_hash: &[u8],
         proof_type: &str,
+        attestation_data: Option<&[u8]>,
     ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type, attestation_data)
+             VALUES (?, ?, ?, ?, ?, ?)",
             params![
                 id.to_string(),
                 subject_id.to_string(),
                 category,
                 proof_hash,
                 proof_type,
+                attestation_data,
             ],
         )?;
         Ok(())

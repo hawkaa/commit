@@ -1,9 +1,11 @@
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
+use crate::services::db::map_db_error;
 use crate::validation::validate_transcript_subject;
 
 #[derive(Deserialize)]
@@ -11,7 +13,7 @@ pub struct SubmitEndorsementRequest {
     pub subject_kind: String,
     pub subject_id: String,
     pub category: String,
-    pub proof_hash: String,
+    pub attestation: String,
     pub proof_type: String,
     pub transcript_sent: String,
 }
@@ -34,8 +36,13 @@ pub async fn submit_endorsement(
     // Validate transcript matches claimed subject
     validate_transcript_subject(&req.transcript_sent, &proof_type, &req.subject_id)?;
 
-    // Decode hex proof hash
-    let proof_bytes = hex::decode(&req.proof_hash).map_err(|_| StatusCode::BAD_REQUEST)?;
+    // Decode attestation and compute proof_hash server-side
+    let attestation_bytes =
+        hex::decode(&req.attestation).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if attestation_bytes.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let proof_hash = Sha256::digest(&attestation_bytes).to_vec();
 
     let db = state
         .db
@@ -49,15 +56,15 @@ pub async fn submit_endorsement(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let endorsement_id = Uuid::new_v4();
-    // TODO: Phase 2 — add authentication (TLSNotary proof verification)
     db.create_endorsement(
         &endorsement_id,
         &subject.id,
         category.as_str(),
-        &proof_bytes,
+        &proof_hash,
         proof_type.as_str(),
+        Some(&attestation_bytes),
     )
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(map_db_error)?;
 
     // Create a pending attestation record (will be submitted on-chain in Phase 2)
     let attestation_id = Uuid::new_v4();
