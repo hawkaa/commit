@@ -105,7 +105,7 @@ Neither path validates that the proof actually corresponds to the claimed subjec
 
 ## Implementation Units
 
-- [ ] **Unit 0: Backend — Identifier canonicalization**
+- [x] **Unit 0: Backend — Identifier canonicalization**
 
 **Goal:** Normalize subject identifiers to lowercase on ingestion to prevent case-mismatch failures in transcript validation and subject lookup.
 
@@ -141,7 +141,7 @@ Neither path validates that the proof actually corresponds to the claimed subjec
 
 ---
 
-- [ ] **Unit 1: Backend — Transcript-subject binding**
+- [x] **Unit 1: Backend — Transcript-subject binding**
 
 **Goal:** Reject endorsements where the claimed subject doesn't match the proof transcript. Fixes P0 #2.
 
@@ -194,7 +194,7 @@ Neither path validates that the proof actually corresponds to the claimed subjec
 
 ---
 
-- [ ] **Unit 2: Backend — Attestation-based proof_hash + replay guard**
+- [x] **Unit 2: Backend — Attestation-based proof_hash + replay guard**
 
 **Goal:** Derive proof_hash from the TLSNotary attestation bytes instead of attacker-controlled fields. Add unique constraint to prevent exact replay. Fixes P0 #1 and R7.
 
@@ -239,7 +239,7 @@ Neither path validates that the proof actually corresponds to the claimed subjec
 
 ---
 
-- [ ] **Unit 3: Extension — Send full attestation and transcript**
+- [x] **Unit 3: Extension — Send full attestation and transcript**
 
 **Goal:** Send the complete TLSNotary attestation and revealed transcript to the backend instead of truncated data. Fixes R5.
 
