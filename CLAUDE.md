@@ -10,6 +10,7 @@ Read these before making any implementation decisions:
 - **CEO plan:** `~/.gstack/projects/commit/ceo-plans/2026-04-10-commit-trust-network.md`
 - **Test plan:** `~/.gstack/projects/commit/hakon-unknown-eng-review-test-plan-20260410-133500.md`
 - **Design system:** `DESIGN.md` (in project root)
+- **Documented solutions:** `docs/solutions/` — past problems and best practices with YAML frontmatter (`module`, `tags`, `problem_type`), relevant when implementing or debugging in documented areas
 
 ## Stack
 
