@@ -14,6 +14,8 @@ contract CommitAttestationRegistry {
         uint64 timestamp;
     }
 
+    uint256 public constant MAX_BATCH_SIZE = 500;
+
     mapping(bytes32 => Attestation) public attestations;
 
     event AttestationRecorded(
@@ -41,6 +43,7 @@ contract CommitAttestationRegistry {
     /// @param endorsementId Deterministic bytes32 derived from the off-chain endorsement UUID.
     /// @param proofHash     SHA-256 hash of the endorsement proof.
     function attest(bytes32 endorsementId, bytes32 proofHash) external onlyOwner {
+        require(proofHash != bytes32(0), "zero proof hash");
         require(attestations[endorsementId].timestamp == 0, "already attested");
         uint64 ts = uint64(block.timestamp);
         attestations[endorsementId] = Attestation({ proofHash: proofHash, timestamp: ts });
@@ -53,9 +56,11 @@ contract CommitAttestationRegistry {
         bytes32[] calldata proofHashes
     ) external onlyOwner {
         require(endorsementIds.length == proofHashes.length, "length mismatch");
+        require(endorsementIds.length <= MAX_BATCH_SIZE, "batch too large");
         uint64 ts = uint64(block.timestamp);
         for (uint256 i = 0; i < endorsementIds.length; i++) {
             bytes32 eid = endorsementIds[i];
+            require(proofHashes[i] != bytes32(0), "zero proof hash");
             require(attestations[eid].timestamp == 0, "already attested");
             attestations[eid] = Attestation({ proofHash: proofHashes[i], timestamp: ts });
             emit AttestationRecorded(eid, proofHashes[i], ts);
@@ -64,7 +69,8 @@ contract CommitAttestationRegistry {
 
     /// @notice Check whether a given proof hash matches the on-chain attestation.
     function verify(bytes32 endorsementId, bytes32 proofHash) external view returns (bool) {
-        return attestations[endorsementId].proofHash == proofHash;
+        Attestation storage a = attestations[endorsementId];
+        return a.timestamp != 0 && a.proofHash == proofHash;
     }
 
     /// @notice Transfer contract ownership to a new address.

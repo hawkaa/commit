@@ -131,6 +131,52 @@ contract CommitAttestationRegistryTest is Test {
         assertFalse(registry.verify(eid, keccak256("any-hash")));
     }
 
+    function test_verify_returns_false_for_zero_hash_nonexistent() public view {
+        bytes32 eid = keccak256("never-attested");
+        assertFalse(registry.verify(eid, bytes32(0)));
+    }
+
+    function test_attest_reverts_on_zero_proof_hash() public {
+        bytes32 eid = keccak256("zero-hash-eid");
+        vm.expectRevert("zero proof hash");
+        registry.attest(eid, bytes32(0));
+    }
+
+    function test_attestBatch_empty_arrays() public {
+        bytes32[] memory eids = new bytes32[](0);
+        bytes32[] memory hashes = new bytes32[](0);
+        registry.attestBatch(eids, hashes);
+    }
+
+    function test_attestBatch_reverts_on_intra_batch_duplicate() public {
+        bytes32 eid = keccak256("same-eid");
+        bytes32[] memory eids = new bytes32[](2);
+        bytes32[] memory hashes = new bytes32[](2);
+        eids[0] = eid;
+        hashes[0] = keccak256("hash-a");
+        eids[1] = eid;
+        hashes[1] = keccak256("hash-b");
+
+        vm.expectRevert("already attested");
+        registry.attestBatch(eids, hashes);
+    }
+
+    function test_attestBatch_reverts_on_zero_proof_hash() public {
+        bytes32[] memory eids = new bytes32[](1);
+        bytes32[] memory hashes = new bytes32[](1);
+        eids[0] = keccak256("batch-zero-eid");
+        hashes[0] = bytes32(0);
+
+        vm.expectRevert("zero proof hash");
+        registry.attestBatch(eids, hashes);
+    }
+
+    function test_transferOwnership_reverts_if_not_owner() public {
+        vm.prank(stranger);
+        vm.expectRevert("unauthorized");
+        registry.transferOwnership(address(0xCAFE));
+    }
+
     // ── transferOwnership ───────────────────────────────────────
 
     function test_transferOwnership() public {
