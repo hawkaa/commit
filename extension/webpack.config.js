@@ -10,9 +10,10 @@ module.exports = (env, argv) => {
       background: path.join(__dirname, "src", "background.ts"),
       "content-github": path.join(__dirname, "src", "content-github.ts"),
       "content-google": path.join(__dirname, "src", "content-google.ts"),
-      // offscreen is NOT a webpack entry — it loads the pre-built UMD bundle
-      // via <script> tag because the WASM worker chain has internal import
-      // paths that webpack cannot safely rewrite.
+      // prove-worker is a Web Worker entry point.
+      // Webpack bundles it with all WASM/spawn worker paths resolved.
+      // The offscreen document loads it via new Worker("prove-worker.js").
+      "prove-worker": path.join(__dirname, "src", "prove-worker.ts"),
     },
 
     output: {
@@ -51,19 +52,18 @@ module.exports = (env, argv) => {
           { from: "icons", to: "icons" },
           { from: "src/offscreen.html", to: "offscreen.html" },
           { from: "src/trust-card.css", to: "trust-card.css" },
-          // Offscreen JS — compiled separately by tsc, not webpack
+          // offscreen.js — plain JS relay (not webpack-bundled, no WASM deps)
           { from: "src/offscreen-bundle.js", to: "offscreen.js" },
-          // Pre-built tlsn-js UMD bundle + all assets it references.
-          // lib.js is a webpack UMD bundle that expects hashed filenames.
-          { from: "node_modules/tlsn-js/build/lib.js", to: "tlsn-lib.js" },
-          // Hashed WASM binary (referenced by lib.js as n.p+"96d03...wasm")
+          // WASM + worker assets referenced at runtime by the UMD bundle inside prove-worker.
+          // These hashed filenames are hardcoded in tlsn-js/build/lib.js.
           { from: "node_modules/tlsn-js/build/96d038089797746d7695.wasm", to: "96d038089797746d7695.wasm" },
-          // Hashed spawn worker (referenced by lib.js as n.p+"a6de6...js")
           { from: "node_modules/tlsn-js/build/a6de6b189c13ad309102.js", to: "a6de6b189c13ad309102.js" },
-          // Raw wasm-bindgen files (referenced by spawn worker via import("../../../tlsn_wasm.js"))
+          // Raw wasm-bindgen files (referenced by spawn worker)
           { from: "node_modules/tlsn-wasm/tlsn_wasm_bg.wasm", to: "tlsn_wasm_bg.wasm" },
           { from: "node_modules/tlsn-wasm/tlsn_wasm.js", to: "tlsn_wasm.js" },
           { from: "node_modules/tlsn-wasm/snippets", to: "snippets" },
+          // spawn.js is also requested at root level by sub-workers
+          { from: "node_modules/tlsn-wasm/snippets/web-spawn-0303048270a97ee1/js/spawn.js", to: "spawn.js" },
         ],
       }),
     ],
