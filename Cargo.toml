@@ -28,4 +28,5 @@ path = "src/bin/mcp.rs"
 
 [dev-dependencies]
 axum-test = "20.0.0"
+serial_test = "3.4.0"
 tokio-test = "0.4.5"

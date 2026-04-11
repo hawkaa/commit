@@ -38,6 +38,10 @@ fn test_app() -> TestServer {
             "/privacy",
             get(commit_backend::routes::privacy::get_privacy_page),
         )
+        .route(
+            "/webhook/endorsement",
+            post(commit_backend::routes::webhook::receive_endorsement_webhook),
+        )
         .with_state(state);
     TestServer::new(app)
 }
@@ -178,4 +182,117 @@ async fn endorsement_post_invalid_hex_returns_400() {
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+// --- Webhook tests ---
+
+use axum::http::HeaderName;
+use axum::http::HeaderValue;
+use serial_test::serial;
+
+fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> serde_json::Value {
+    serde_json::json!({
+        "server_name": "api.github.com",
+        "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+        "session": {
+            "id": "test-session-123",
+            "subject_kind": subject_kind,
+            "subject_id": subject_id,
+            "category": "usage",
+            "proof_type": proof_type
+        }
+    })
+}
+
+fn auth_header(token: &str) -> (HeaderName, HeaderValue) {
+    (
+        HeaderName::from_static("authorization"),
+        HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+    )
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_rejects_without_secret() {
+    // VERIFIER_WEBHOOK_SECRET not set → 500
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+    let server = test_app();
+    let resp = server
+        .post("/webhook/endorsement")
+        .json(&webhook_payload("github", "owner/repo", "git_history"))
+        .await;
+    resp.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_rejects_bad_auth() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret") };
+    let server = test_app();
+    let (name, value) = auth_header("wrong-token");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&webhook_payload("github", "owner/repo", "git_history"))
+        .await;
+    resp.assert_status(axum::http::StatusCode::UNAUTHORIZED);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_missing_subject_kind_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-2") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-2");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [],
+            "session": { "id": "s1" }
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_invalid_server_name_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-3") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-3");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "evil.com",
+            "results": [],
+            "session": {
+                "id": "s2",
+                "subject_kind": "github",
+                "subject_id": "owner/repo",
+                "proof_type": "git_history"
+            }
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_unknown_subject_returns_404() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-4") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-4");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&webhook_payload("github", "nonexistent/repo", "git_history"))
+        .await;
+    resp.assert_status(axum::http::StatusCode::NOT_FOUND);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
 }

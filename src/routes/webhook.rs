@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::models::SubjectKind;
+use crate::models::{EndorsementCategory, ProofType, SubjectKind};
 
 /// Webhook payload from the TLSNotary verifier server.
 /// Sent after successful MPC-TLS verification of an endorsement proof.
@@ -55,18 +55,20 @@ pub async fn receive_endorsement_webhook(
     headers: axum::http::HeaderMap,
     Json(payload): Json<VerifierWebhook>,
 ) -> Result<Json<WebhookResponse>, StatusCode> {
-    // Authenticate webhook with shared secret
-    let expected_token = std::env::var("VERIFIER_WEBHOOK_SECRET").unwrap_or_default();
-    if !expected_token.is_empty() {
-        let auth = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        let expected = format!("Bearer {expected_token}");
-        if auth != expected {
-            tracing::warn!("Webhook auth failed from verifier");
-            return Err(StatusCode::UNAUTHORIZED);
-        }
+    // Authenticate webhook with shared secret (fail closed)
+    let expected_token = std::env::var("VERIFIER_WEBHOOK_SECRET")
+        .map_err(|_| {
+            tracing::error!("VERIFIER_WEBHOOK_SECRET not set — rejecting webhook");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let expected = format!("Bearer {expected_token}");
+    if auth != expected {
+        tracing::warn!("Webhook auth failed from verifier");
+        return Err(StatusCode::UNAUTHORIZED);
     }
 
     // Extract subject info from session_data (set by the extension during registration)
@@ -80,32 +82,32 @@ pub async fn receive_endorsement_webhook(
         .data
         .get("subject_id")
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let category = payload
+    let category_str = payload
         .session
         .data
         .get("category")
-        .map_or("usage", |s| s.as_str())
-        .to_string();
-    let proof_type = payload
+        .map_or("usage", |s| s.as_str());
+    let category = EndorsementCategory::parse(category_str).ok_or(StatusCode::BAD_REQUEST)?;
+    let proof_type_str = payload
         .session
         .data
         .get("proof_type")
-        .map_or("git_history", |s| s.as_str())
-        .to_string();
+        .map_or("git_history", |s| s.as_str());
+    let proof_type = ProofType::parse(proof_type_str).ok_or(StatusCode::BAD_REQUEST)?;
 
     let kind = SubjectKind::parse(subject_kind_str).ok_or(StatusCode::BAD_REQUEST)?;
 
     // Validate the server_name matches expected target for proof type
-    let valid_server = match proof_type.as_str() {
+    let valid_server = match proof_type_str {
         "git_history" | "ci_logs" => payload.server_name == "api.github.com",
-        "email" => payload.server_name.contains("gmail") || payload.server_name.contains("outlook"),
-        _ => true,
+        "email" => payload.server_name.ends_with(".google.com") || payload.server_name.ends_with(".outlook.com"),
+        _ => false,
     };
     if !valid_server {
         tracing::warn!(
             "Server name mismatch: got {} for proof type {}",
             payload.server_name,
-            proof_type
+            proof_type_str
         );
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -129,9 +131,9 @@ pub async fn receive_endorsement_webhook(
     db.create_endorsement(
         &endorsement_id,
         &subject.id,
-        &category,
+        category.as_str(),
         &proof_hash,
-        &proof_type,
+        proof_type.as_str(),
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

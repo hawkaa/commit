@@ -36,7 +36,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["*.wasm", "*.js", "snippets/**/*.js", "tlsn/*.wasm", "tlsn/*.js"],
+      "resources": [
+        "96d038089797746d7695.wasm",
+        "a6de6b189c13ad309102.js",
+        "snippets/web-spawn-*/js/spawn.js",
+        "tlsn/tlsn.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ],

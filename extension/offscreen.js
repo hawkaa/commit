@@ -25,10 +25,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
-  if (msg.type === "PING_OFFSCREEN") {
-    sendResponse({ ready: initialized });
-    return false;
-  }
 });
 
 async function handleProveEndorsement(msg) {

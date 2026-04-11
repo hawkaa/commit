@@ -69,10 +69,17 @@ function createTrustCard(data) {
 
   const details = document.createElement("div");
   details.className = "commit-card-details";
-  details.innerHTML = `
-    <div class="commit-card-label">Commit Score</div>
-    <div class="commit-card-signals">${formatSignals(score.breakdown)}</div>
-  `;
+
+  const label = document.createElement("div");
+  label.className = "commit-card-label";
+  label.textContent = "Commit Score";
+
+  const signals = document.createElement("div");
+  signals.className = "commit-card-signals";
+  signals.textContent = formatSignals(score.breakdown);
+
+  details.appendChild(label);
+  details.appendChild(signals);
 
   // Endorse button (ZK-verified via TLSNotary)
   const endorseBtn = document.createElement("button");
@@ -105,23 +112,22 @@ async function startEndorsement(repoId, btn) {
       btn.classList.remove("commit-endorse-btn--active");
       btn.classList.add("commit-endorse-btn--done");
     } else {
-      btn.textContent = "Failed";
-      btn.disabled = false;
       console.error("[commit] Endorsement failed:", result.error);
-      setTimeout(() => {
-        btn.textContent = "Endorse";
-        btn.classList.remove("commit-endorse-btn--active");
-      }, 3000);
+      resetEndorseButton(btn, "Failed");
     }
   } catch (err) {
-    btn.textContent = "Error";
-    btn.disabled = false;
     console.error("[commit] Endorsement error:", err);
-    setTimeout(() => {
-      btn.textContent = "Endorse";
-      btn.classList.remove("commit-endorse-btn--active");
-    }, 3000);
+    resetEndorseButton(btn, "Error");
   }
+}
+
+function resetEndorseButton(btn, label) {
+  btn.textContent = label;
+  btn.disabled = false;
+  setTimeout(() => {
+    btn.textContent = "Endorse";
+    btn.classList.remove("commit-endorse-btn--active");
+  }, 3000);
 }
 
 function formatSignals(breakdown) {
