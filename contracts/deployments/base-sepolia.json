@@ -1,0 +1,11 @@
+{
+  "contract": "CommitAttestationRegistry",
+  "address": "0x08AE2e7fd94130645725Afc69e9BE2140f2395d7",
+  "chain": "base-sepolia",
+  "chain_id": 84532,
+  "deployer": "0xc1C8A7e414D0D35388872679B579351162fb8b79",
+  "block_number": 40059451,
+  "tx_hash": "0x47f81578d817bd6a1ee4f973a449e8b36bf04a805a5d65b323dcaebd1213ad22",
+  "solc_version": "0.8.30",
+  "deployed_at": "2026-04-11"
+}
