@@ -53,7 +53,7 @@ Do not deviate without explicit user approval.
 - [x] Badge SVG endpoint
 - [x] MCP server (thin wrapper over trust-card API)
 - [x] OG meta tags on trust card pages (social previews)
-- [ ] L2 contract deployment
+- [x] L2 contract deployment (Base Sepolia: `0x08AE2e7fd94130645725Afc69e9BE2140f2395d7`)
 
 ### Phase 2 — TLSNotary + Endorsements (weeks 3-6)
 - [ ] TLSNotary integration (tlsn-js)

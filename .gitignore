@@ -22,3 +22,9 @@ extension/dist/
 
 # Database
 *.db
+
+# Foundry (contracts/)
+contracts/out/
+contracts/cache/
+contracts/lib/
+contracts/broadcast/
