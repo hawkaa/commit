@@ -201,9 +201,9 @@ use serial_test::serial;
 
 fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> serde_json::Value {
     let transcript_sent = match proof_type {
-        "ci_logs" => format!(
-            "GET /repos/{subject_id}/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n"
-        ),
+        "ci_logs" => {
+            format!("GET /repos/{subject_id}/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n")
+        }
         _ => format!("GET /repos/{subject_id} HTTP/1.1\r\nHost: api.github.com\r\n"),
     };
     serde_json::json!({
@@ -318,7 +318,11 @@ async fn webhook_happy_path_creates_endorsement() {
     let resp = server
         .post("/webhook/endorsement")
         .add_header(name, value)
-        .json(&webhook_payload("github", "test-org/test-repo", "git_history"))
+        .json(&webhook_payload(
+            "github",
+            "test-org/test-repo",
+            "git_history",
+        ))
         .await;
     resp.assert_status_ok();
     let body: serde_json::Value = resp.json();

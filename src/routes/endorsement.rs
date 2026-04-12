@@ -48,8 +48,7 @@ pub async fn submit_endorsement(
     if req.attestation.len() > 1_000_000 {
         return Err(StatusCode::PAYLOAD_TOO_LARGE);
     }
-    let attestation_bytes =
-        hex::decode(&req.attestation).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let attestation_bytes = hex::decode(&req.attestation).map_err(|_| StatusCode::BAD_REQUEST)?;
     if attestation_bytes.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }

@@ -118,7 +118,9 @@ fn validate_git_history_transcript(
 
     // Validate components are clean ASCII (no percent-encoding, null bytes, non-printable)
     if !is_valid_path_component(transcript_owner) || !is_valid_path_component(transcript_repo) {
-        tracing::warn!("Invalid characters in transcript path components: {transcript_owner}/{transcript_repo}");
+        tracing::warn!(
+            "Invalid characters in transcript path components: {transcript_owner}/{transcript_repo}"
+        );
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -141,10 +143,7 @@ fn validate_git_history_transcript(
 /// Reuses the git_history parsing pattern but additionally requires the path
 /// segment after `{repo}` to be `actions`, preventing git_history transcripts
 /// from being accepted as ci_logs.
-fn validate_ci_logs_transcript(
-    transcript_sent: &str,
-    subject_id: &str,
-) -> Result<(), StatusCode> {
+fn validate_ci_logs_transcript(transcript_sent: &str, subject_id: &str) -> Result<(), StatusCode> {
     // Parse subject_id into owner/repo components
     let subject_parts: Vec<&str> = subject_id.splitn(2, '/').collect();
     if subject_parts.len() != 2 {
@@ -201,7 +200,9 @@ fn validate_ci_logs_transcript(
 
     // Validate components are clean ASCII
     if !is_valid_path_component(transcript_owner) || !is_valid_path_component(transcript_repo) {
-        tracing::warn!("Invalid characters in transcript path components: {transcript_owner}/{transcript_repo}");
+        tracing::warn!(
+            "Invalid characters in transcript path components: {transcript_owner}/{transcript_repo}"
+        );
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -236,10 +237,7 @@ fn validate_email_transcript(transcript_recv: &str, subject_id: &str) -> Result<
     for (idx, _) in transcript_recv.match_indices(marker) {
         let after_marker = &transcript_recv[idx + marker.len()..];
         let path_parts: Vec<&str> = after_marker.splitn(3, '/').collect();
-        if path_parts.len() >= 2
-            && !path_parts[0].is_empty()
-            && !path_parts[1].is_empty()
-        {
+        if path_parts.len() >= 2 && !path_parts[0].is_empty() && !path_parts[1].is_empty() {
             // Trim the repo name at any non-path character (whitespace, quote, etc.)
             let owner = path_parts[0]
                 .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
@@ -284,8 +282,8 @@ pub fn verify_attestation_signature(
     attestation_bytes: &[u8],
     trusted_key: &k256::ecdsa::VerifyingKey,
 ) -> Result<(), StatusCode> {
-    let attestation: tlsn_core::attestation::Attestation =
-        bcs::from_bytes(attestation_bytes).map_err(|e| {
+    let attestation: tlsn_core::attestation::Attestation = bcs::from_bytes(attestation_bytes)
+        .map_err(|e| {
             tracing::warn!("Attestation BCS deserialization failed: {e}");
             StatusCode::BAD_REQUEST
         })?;
@@ -309,12 +307,10 @@ pub fn verify_attestation_signature(
             StatusCode::BAD_REQUEST
         })?;
 
-    trusted_key
-        .verify(&header_bytes, &signature)
-        .map_err(|_| {
-            tracing::warn!("Attestation signature verification failed — not signed by trusted notary");
-            StatusCode::UNAUTHORIZED
-        })
+    trusted_key.verify(&header_bytes, &signature).map_err(|_| {
+        tracing::warn!("Attestation signature verification failed — not signed by trusted notary");
+        StatusCode::UNAUTHORIZED
+    })
 }
 
 #[cfg(test)]
@@ -354,32 +350,45 @@ mod tests {
     #[test]
     fn valid_git_history_transcript() {
         let transcript = "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n";
-        assert!(validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").is_ok());
+        assert!(
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo")
+                .is_ok()
+        );
     }
 
     #[test]
     fn case_insensitive_match() {
         let transcript = "GET /repos/Owner/Repo HTTP/1.1\r\nHost: api.github.com\r\n";
-        assert!(validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").is_ok());
+        assert!(
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo")
+                .is_ok()
+        );
     }
 
     #[test]
     fn query_parameters_ignored() {
         let transcript = "GET /repos/owner/repo?per_page=1 HTTP/1.1\r\nHost: api.github.com\r\n";
-        assert!(validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").is_ok());
+        assert!(
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo")
+                .is_ok()
+        );
     }
 
     #[test]
     fn extra_path_segments_ok() {
         let transcript = "GET /repos/owner/repo/commits HTTP/1.1\r\nHost: api.github.com\r\n";
-        assert!(validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").is_ok());
+        assert!(
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo")
+                .is_ok()
+        );
     }
 
     #[test]
     fn subject_mismatch_rejected() {
         let transcript = "GET /repos/owner/repoA HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repoB").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repoB")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -387,7 +396,8 @@ mod tests {
     #[test]
     fn empty_transcript_rejected() {
         assert_eq!(
-            validate_transcript_subject("", None, &ProofType::GitHistory, "owner/repo").unwrap_err(),
+            validate_transcript_subject("", None, &ProofType::GitHistory, "owner/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -397,7 +407,8 @@ mod tests {
         // /repos/ must be at the start of the path, not inside a query parameter
         let transcript = "GET /evil?x=/repos/victim/repo HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "victim/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "victim/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -405,7 +416,13 @@ mod tests {
     #[test]
     fn no_request_line_rejected() {
         assert_eq!(
-            validate_transcript_subject("not-a-request", None, &ProofType::GitHistory, "owner/repo").unwrap_err(),
+            validate_transcript_subject(
+                "not-a-request",
+                None,
+                &ProofType::GitHistory,
+                "owner/repo"
+            )
+            .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -414,7 +431,8 @@ mod tests {
     fn incomplete_path_rejected() {
         let transcript = "GET /repos/owner HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -423,7 +441,8 @@ mod tests {
     fn percent_encoded_rejected() {
         let transcript = "GET /repos/victim%2Frepo HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "victim/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "victim/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -432,7 +451,8 @@ mod tests {
     fn null_bytes_rejected() {
         let transcript = "GET /repos/owner\0/repo HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -441,7 +461,8 @@ mod tests {
     fn email_proof_type_no_recv_rejected() {
         let transcript = "GET /repos/owner/repo HTTP/1.1\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::Email, "owner/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::Email, "owner/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -450,7 +471,13 @@ mod tests {
     fn email_valid_recv_with_https_url() {
         let recv = "HTTP/1.1 200 OK\r\n\r\nCheck out https://github.com/owner/repo for details";
         assert!(
-            validate_transcript_subject("GET / HTTP/1.1\r\n", Some(recv), &ProofType::Email, "owner/repo").is_ok()
+            validate_transcript_subject(
+                "GET / HTTP/1.1\r\n",
+                Some(recv),
+                &ProofType::Email,
+                "owner/repo"
+            )
+            .is_ok()
         );
     }
 
@@ -458,7 +485,13 @@ mod tests {
     fn email_valid_recv_bare_url() {
         let recv = "HTTP/1.1 200 OK\r\n\r\nSee github.com/owner/repo for info";
         assert!(
-            validate_transcript_subject("GET / HTTP/1.1\r\n", Some(recv), &ProofType::Email, "owner/repo").is_ok()
+            validate_transcript_subject(
+                "GET / HTTP/1.1\r\n",
+                Some(recv),
+                &ProofType::Email,
+                "owner/repo"
+            )
+            .is_ok()
         );
     }
 
@@ -466,7 +499,13 @@ mod tests {
     fn email_case_insensitive_recv() {
         let recv = "HTTP/1.1 200 OK\r\n\r\nhttps://github.com/Owner/Repo/issues";
         assert!(
-            validate_transcript_subject("GET / HTTP/1.1\r\n", Some(recv), &ProofType::Email, "owner/repo").is_ok()
+            validate_transcript_subject(
+                "GET / HTTP/1.1\r\n",
+                Some(recv),
+                &ProofType::Email,
+                "owner/repo"
+            )
+            .is_ok()
         );
     }
 
@@ -474,7 +513,13 @@ mod tests {
     fn email_recv_no_matching_url_rejected() {
         let recv = "HTTP/1.1 200 OK\r\n\r\nhttps://github.com/other/repo";
         assert_eq!(
-            validate_transcript_subject("GET / HTTP/1.1\r\n", Some(recv), &ProofType::Email, "owner/repo").unwrap_err(),
+            validate_transcript_subject(
+                "GET / HTTP/1.1\r\n",
+                Some(recv),
+                &ProofType::Email,
+                "owner/repo"
+            )
+            .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -482,15 +527,20 @@ mod tests {
     #[test]
     fn email_recv_empty_body_rejected() {
         assert_eq!(
-            validate_transcript_subject("GET / HTTP/1.1\r\n", Some(""), &ProofType::Email, "owner/repo").unwrap_err(),
+            validate_transcript_subject(
+                "GET / HTTP/1.1\r\n",
+                Some(""),
+                &ProofType::Email,
+                "owner/repo"
+            )
+            .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
 
     #[test]
     fn ci_logs_valid_actions_path() {
-        let transcript =
-            "GET /repos/owner/repo/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n";
+        let transcript = "GET /repos/owner/repo/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n";
         assert!(
             validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repo").is_ok()
         );
@@ -498,8 +548,7 @@ mod tests {
 
     #[test]
     fn ci_logs_case_insensitive() {
-        let transcript =
-            "GET /repos/Owner/Repo/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n";
+        let transcript = "GET /repos/Owner/Repo/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n";
         assert!(
             validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repo").is_ok()
         );
@@ -510,7 +559,8 @@ mod tests {
         // A git_history-style path without /actions/ must be rejected for ci_logs
         let transcript = "GET /repos/owner/repo/commits HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
@@ -519,15 +569,15 @@ mod tests {
     fn ci_logs_no_segment_after_repo_rejected() {
         let transcript = "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }
 
     #[test]
     fn ci_logs_subject_mismatch_rejected() {
-        let transcript =
-            "GET /repos/owner/repoA/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n";
+        let transcript = "GET /repos/owner/repoA/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n";
         assert_eq!(
             validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repoB")
                 .unwrap_err(),
@@ -548,7 +598,10 @@ mod tests {
 
     #[test]
     fn single_request_passes() {
-        assert!(validate_single_request("GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n").is_ok());
+        assert!(
+            validate_single_request("GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n")
+                .is_ok()
+        );
     }
 
     #[test]
@@ -580,7 +633,8 @@ mod tests {
     fn pipelining_blocks_full_transcript_validation() {
         let transcript = "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n\r\nGET /repos/evil/other HTTP/1.1\r\n";
         assert_eq!(
-            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").unwrap_err(),
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo")
+                .unwrap_err(),
             StatusCode::BAD_REQUEST
         );
     }

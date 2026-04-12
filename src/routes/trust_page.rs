@@ -4,7 +4,9 @@ use axum::{
 };
 
 use crate::AppState;
-use crate::models::{CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind};
+use crate::models::{
+    CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind,
+};
 use crate::services::score::{build_signals, score_github_repo};
 use uuid::Uuid;
 
@@ -194,8 +196,7 @@ fn render_html(
         .join("\n        ");
 
     let breakdown_html = render_breakdown(&score.breakdown);
-    let endorsements_html =
-        render_endorsements_section(endorsement_count, recent_endorsements);
+    let endorsements_html = render_endorsements_section(endorsement_count, recent_endorsements);
 
     let layer_label = if score.layer1_only {
         r#"<span class="layer-badge">Public data only</span>"#
@@ -514,10 +515,7 @@ fn render_html(
     )
 }
 
-fn render_endorsements_section(
-    count: u32,
-    endorsements: &[EndorsementSummary],
-) -> String {
+fn render_endorsements_section(count: u32, endorsements: &[EndorsementSummary]) -> String {
     let title = if count > 0 {
         format!("Endorsements ({count})")
     } else {

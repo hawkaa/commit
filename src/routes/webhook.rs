@@ -61,11 +61,10 @@ pub async fn receive_endorsement_webhook(
     Json(payload): Json<VerifierWebhook>,
 ) -> Result<Json<WebhookResponse>, StatusCode> {
     // Authenticate webhook with shared secret (fail closed)
-    let expected_token = std::env::var("VERIFIER_WEBHOOK_SECRET")
-        .map_err(|_| {
-            tracing::error!("VERIFIER_WEBHOOK_SECRET not set — rejecting webhook");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let expected_token = std::env::var("VERIFIER_WEBHOOK_SECRET").map_err(|_| {
+        tracing::error!("VERIFIER_WEBHOOK_SECRET not set — rejecting webhook");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let auth = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -114,7 +113,10 @@ pub async fn receive_endorsement_webhook(
     // Validate the server_name matches expected target for proof type
     let valid_server = match proof_type_str {
         "git_history" | "ci_logs" => payload.server_name == "api.github.com",
-        "email" => payload.server_name.ends_with(".google.com") || payload.server_name.ends_with(".outlook.com"),
+        "email" => {
+            payload.server_name.ends_with(".google.com")
+                || payload.server_name.ends_with(".outlook.com")
+        }
         _ => false,
     };
     if !valid_server {
@@ -221,4 +223,3 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         .fold(0u8, |acc, (x, y)| acc | (x ^ y))
         == 0
 }
-

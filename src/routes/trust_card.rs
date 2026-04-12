@@ -7,9 +7,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::models::{CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind};
+use crate::models::{
+    CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind,
+};
 use crate::services::db::EndorsementRow;
-use crate::services::score::{build_signals, score_github_repo, score_github_repo_with_endorsements};
+use crate::services::score::{
+    build_signals, score_github_repo, score_github_repo_with_endorsements,
+};
 
 #[derive(Deserialize)]
 pub struct TrustCardQuery {
@@ -79,7 +83,8 @@ async fn get_github_trust_card(
             });
             let endorsement_count = db.get_endorsement_count(&subject.id).unwrap_or(0);
             let recent_endorsements = map_endorsement_rows(
-                db.get_recent_endorsements(&subject.id, 5).unwrap_or_default(),
+                db.get_recent_endorsements(&subject.id, 5)
+                    .unwrap_or_default(),
             );
             return Ok(Json(TrustCardResponse {
                 subject,
@@ -92,14 +97,10 @@ async fn get_github_trust_card(
     }
 
     // Cache miss: fetch from GitHub
-    let gh_repo = state
-        .github
-        .get_repo(owner, repo_name)
-        .await
-        .map_err(|e| {
-            tracing::error!("GitHub API error for {owner}/{repo_name}: {e}");
-            StatusCode::BAD_GATEWAY
-        })?;
+    let gh_repo = state.github.get_repo(owner, repo_name).await.map_err(|e| {
+        tracing::error!("GitHub API error for {owner}/{repo_name}: {e}");
+        StatusCode::BAD_GATEWAY
+    })?;
 
     let contributor_count = state
         .github
@@ -134,7 +135,12 @@ async fn get_github_trust_card(
         .get_endorsement_counts_by_status(&subject.id)
         .unwrap_or((0, 0));
     let score = if verified_count > 0 || pending_count > 0 {
-        score_github_repo_with_endorsements(&gh_repo, contributor_count, verified_count, pending_count)
+        score_github_repo_with_endorsements(
+            &gh_repo,
+            contributor_count,
+            verified_count,
+            pending_count,
+        )
     } else {
         score_github_repo(&gh_repo, contributor_count)
     };
@@ -146,7 +152,8 @@ async fn get_github_trust_card(
     );
     let endorsement_count = db.get_endorsement_count(&subject.id).unwrap_or(0);
     let recent_endorsements = map_endorsement_rows(
-        db.get_recent_endorsements(&subject.id, 5).unwrap_or_default(),
+        db.get_recent_endorsements(&subject.id, 5)
+            .unwrap_or_default(),
     );
 
     Ok(Json(TrustCardResponse {

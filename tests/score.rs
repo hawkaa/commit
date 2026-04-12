@@ -1,5 +1,5 @@
 use commit_backend::models::signal::{ScoreBreakdown, compute_score};
-use commit_backend::services::score::{VERIFIED_WEIGHT, PENDING_WEIGHT};
+use commit_backend::services::score::{PENDING_WEIGHT, VERIFIED_WEIGHT};
 
 #[test]
 fn zero_signals_returns_none() {
