@@ -90,6 +90,12 @@ async function ensureOffscreenDocument(): Promise<void> {
 
 // === Message Handling ===
 
+interface KeyringEntry {
+  publicKeyHex: string;
+  label: string;
+  addedAt: string;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "START_ENDORSEMENT") {
     handleStartEndorsement(msg as EndorsementMessage)
@@ -97,6 +103,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch((err: Error) =>
         sendResponse({ success: false, error: err.message })
       );
+    return true;
+  }
+
+  if (msg.type === "KEYRING_ADD") {
+    handleKeyringAdd(msg.publicKeyHex, msg.label)
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ success: false }));
+    return true;
+  }
+
+  if (msg.type === "KEYRING_REMOVE") {
+    handleKeyringRemove(msg.publicKeyHex)
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ success: false }));
+    return true;
+  }
+
+  if (msg.type === "NETWORK_QUERY") {
+    handleNetworkQuery(msg.subjectKind, msg.subjectId)
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse(null));
     return true;
   }
 });
@@ -238,5 +265,96 @@ async function runEndorsementFlow(
       error: `Network error: ${(err as Error).message}`,
       errorCode: "network",
     };
+  }
+}
+
+// === Keyring Management ===
+
+async function handleKeyringAdd(
+  publicKeyHex: string,
+  label: string
+): Promise<{ success: boolean }> {
+  const hex = publicKeyHex.toLowerCase();
+  if (hex.length !== 64 || !/^[0-9a-f]+$/.test(hex)) {
+    return { success: false };
+  }
+
+  const stored = await chrome.storage.local.get("keyring");
+  const keyring: KeyringEntry[] = stored.keyring || [];
+
+  // Prevent duplicates
+  if (keyring.some((e) => e.publicKeyHex === hex)) {
+    return { success: false };
+  }
+
+  keyring.push({
+    publicKeyHex: hex,
+    label: label || "Unknown",
+    addedAt: new Date().toISOString(),
+  });
+
+  await chrome.storage.local.set({ keyring });
+  console.log(`[commit] Added key to keyring: ${hex.slice(0, 8)}...`);
+  return { success: true };
+}
+
+async function handleKeyringRemove(
+  publicKeyHex: string
+): Promise<{ success: boolean }> {
+  const hex = publicKeyHex.toLowerCase();
+  const stored = await chrome.storage.local.get("keyring");
+  const keyring: KeyringEntry[] = stored.keyring || [];
+
+  const filtered = keyring.filter((e) => e.publicKeyHex !== hex);
+  await chrome.storage.local.set({ keyring: filtered });
+  console.log(`[commit] Removed key from keyring: ${hex.slice(0, 8)}...`);
+  return { success: true };
+}
+
+// === Network Query ===
+
+async function handleNetworkQuery(
+  subjectKind: string,
+  subjectId: string
+): Promise<{ network: number; total: number } | null> {
+  const stored = await chrome.storage.local.get("keyring");
+  const keyring: KeyringEntry[] = stored.keyring || [];
+
+  // Skip query if keyring is empty
+  if (keyring.length === 0) return null;
+
+  // Hash each contact's public key (the backend stores hashes, not raw keys)
+  const keyHashes: string[] = [];
+  for (const entry of keyring) {
+    const bytes = new Uint8Array(
+      entry.publicKeyHex.match(/.{2}/g)!.map((b) => parseInt(b, 16))
+    );
+    const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
+    const hex = Array.from(new Uint8Array(hashBuf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    keyHashes.push(hex);
+  }
+
+  try {
+    const resp = await fetch(`${API_BASE}/network-query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: subjectKind,
+        id: subjectId,
+        key_hashes: keyHashes,
+      }),
+    });
+
+    if (!resp.ok) return null;
+
+    const data = await resp.json();
+    return {
+      network: data.network_endorsement_count,
+      total: data.total_endorsement_count,
+    };
+  } catch {
+    return null;
   }
 }

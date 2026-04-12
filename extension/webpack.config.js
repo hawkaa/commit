@@ -10,6 +10,7 @@ module.exports = (env, argv) => {
       background: path.join(__dirname, "src", "background.ts"),
       "content-github": path.join(__dirname, "src", "content-github.ts"),
       "content-google": path.join(__dirname, "src", "content-google.ts"),
+      popup: path.join(__dirname, "src", "popup.ts"),
       // prove-worker is a Web Worker entry point.
       // Webpack bundles it with all WASM/spawn worker paths resolved.
       // The offscreen document loads it via new Worker("prove-worker.js").
@@ -51,6 +52,7 @@ module.exports = (env, argv) => {
           { from: "src/manifest.json", to: "manifest.json" },
           { from: "icons", to: "icons" },
           { from: "src/offscreen.html", to: "offscreen.html" },
+          { from: "src/popup.html", to: "popup.html" },
           { from: "src/trust-card.css", to: "trust-card.css" },
           // offscreen.js — plain JS relay (not webpack-bundled, no WASM deps)
           { from: "src/offscreen-bundle.js", to: "offscreen.js" },
