@@ -22,6 +22,16 @@ pub struct Database {
 }
 
 #[derive(Debug)]
+pub struct AttestationRow {
+    pub id: String,
+    pub endorsement_id: String,
+    pub tx_hash: Option<String>,
+    pub chain: String,
+    pub block_number: Option<i64>,
+    pub attested_at: Option<String>,
+}
+
+#[derive(Debug)]
 pub struct EndorsementRow {
     pub id: String,
     pub subject_id: String,
@@ -336,6 +346,31 @@ impl Database {
             })
         })?;
         rows.collect()
+    }
+
+    pub fn get_attestation_for_endorsement(
+        &self,
+        endorsement_id: &str,
+    ) -> Result<Option<AttestationRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, endorsement_id, tx_hash, chain, block_number, attested_at
+             FROM attestations WHERE endorsement_id = ?",
+        )?;
+        let result = stmt.query_row(params![endorsement_id], |row| {
+            Ok(AttestationRow {
+                id: row.get(0)?,
+                endorsement_id: row.get(1)?,
+                tx_hash: row.get(2)?,
+                chain: row.get(3)?,
+                block_number: row.get(4)?,
+                attested_at: row.get(5)?,
+            })
+        });
+        match result {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.

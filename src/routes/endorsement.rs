@@ -103,15 +103,16 @@ pub async fn submit_endorsement(
     let status = if signature_verified {
         db.update_endorsement_status(&endorsement_id, "verified")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        // Create attestation record for L2 submission (only for verified endorsements)
+        let attestation_id = Uuid::new_v4();
+        db.create_attestation(&attestation_id, &endorsement_id, "base_sepolia")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
         "verified"
     } else {
         "pending_attestation"
     };
-
-    // Create a pending attestation record (will be submitted on-chain in Phase 2)
-    let attestation_id = Uuid::new_v4();
-    db.create_attestation(&attestation_id, &endorsement_id, "pending")
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(EndorsementResponse {
         id: endorsement_id.to_string(),

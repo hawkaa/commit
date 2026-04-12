@@ -854,3 +854,83 @@ async fn endorsement_appears_in_trust_card_response() {
         "endorsement category should match"
     );
 }
+
+// --- Attestation row creation tests ---
+
+#[tokio::test]
+async fn endorsement_post_without_notary_key_creates_no_attestation_row() {
+    let (server, state) = build_app();
+
+    // Set up a subject
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "att-test-org/att-test-repo".to_string(),
+            display_name: "att-test-org/att-test-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+    }
+
+    // Submit endorsement without notary key configured (state.notary_public_key is None)
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "att-test-org/att-test-repo",
+            "category": "usage",
+            "attestation": "deadbeef01020304aabbccdd",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/att-test-org/att-test-repo HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "pending_attestation");
+
+    // Verify no attestation row was created (since endorsement is not verified)
+    let db = state.db.lock().unwrap();
+    let endorsement_id = body["id"].as_str().unwrap();
+    let attestation = db.get_attestation_for_endorsement(endorsement_id).unwrap();
+    assert!(
+        attestation.is_none(),
+        "No attestation row should be created for pending_attestation endorsements"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_creates_attestation_row_with_base_sepolia_chain() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-att-row") };
+    let (server, state) = build_app();
+    let (name, value) = auth_header("test-secret-att-row");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&webhook_payload(
+            "github",
+            "att-row-org/att-row-repo",
+            "git_history",
+        ))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+
+    // Verify attestation row exists with chain = "base_sepolia" and tx_hash = NULL
+    let db = state.db.lock().unwrap();
+    let endorsement_id = body["endorsement_id"].as_str().unwrap();
+    let attestation = db
+        .get_attestation_for_endorsement(endorsement_id)
+        .unwrap()
+        .expect("attestation row should exist for verified webhook endorsement");
+    assert_eq!(attestation.chain, "base_sepolia");
+    assert!(
+        attestation.tx_hash.is_none(),
+        "tx_hash should be NULL before L2 submission"
+    );
+
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
