@@ -25,8 +25,9 @@ async fn main() {
             use k256::pkcs8::DecodePublicKey;
             let key = k256::ecdsa::VerifyingKey::from_public_key_pem(&pem)
                 .expect("NOTARY_PUBLIC_KEY contains invalid PEM — cannot start");
-            let sec1 = key.to_encoded_point(true);
-            let fingerprint = hex::encode(&sec1.as_bytes()[sec1.len().saturating_sub(6)..]);
+            let sec1_bytes = key.to_encoded_point(true);
+            let bytes = sec1_bytes.as_bytes();
+            let fingerprint = hex::encode(&bytes[bytes.len().saturating_sub(6)..]);
             tracing::info!("Notary public key loaded (tail: ...{fingerprint})");
             Some(key)
         }
