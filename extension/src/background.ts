@@ -270,6 +270,9 @@ async function runEndorsementFlow(
 
 // === Keyring Management ===
 
+// Serialize keyring mutations to prevent read-modify-write race conditions
+let keyringMutex: Promise<void> = Promise.resolve();
+
 async function handleKeyringAdd(
   publicKeyHex: string,
   label: string
@@ -279,36 +282,47 @@ async function handleKeyringAdd(
     return { success: false };
   }
 
-  const stored = await chrome.storage.local.get("keyring");
-  const keyring: KeyringEntry[] = stored.keyring || [];
+  return new Promise((resolve) => {
+    keyringMutex = keyringMutex.then(async () => {
+      const stored = await chrome.storage.local.get("keyring");
+      const keyring: KeyringEntry[] = stored.keyring || [];
 
-  // Prevent duplicates
-  if (keyring.some((e) => e.publicKeyHex === hex)) {
-    return { success: false };
-  }
+      // Prevent duplicates
+      if (keyring.some((e) => e.publicKeyHex === hex)) {
+        resolve({ success: false });
+        return;
+      }
 
-  keyring.push({
-    publicKeyHex: hex,
-    label: label || "Unknown",
-    addedAt: new Date().toISOString(),
+      keyring.push({
+        publicKeyHex: hex,
+        label: label || "Unknown",
+        addedAt: new Date().toISOString(),
+      });
+
+      await chrome.storage.local.set({ keyring });
+      console.log(`[commit] Added key to keyring: ${hex.slice(0, 8)}...`);
+      resolve({ success: true });
+    });
   });
-
-  await chrome.storage.local.set({ keyring });
-  console.log(`[commit] Added key to keyring: ${hex.slice(0, 8)}...`);
-  return { success: true };
 }
 
 async function handleKeyringRemove(
   publicKeyHex: string
 ): Promise<{ success: boolean }> {
   const hex = publicKeyHex.toLowerCase();
-  const stored = await chrome.storage.local.get("keyring");
-  const keyring: KeyringEntry[] = stored.keyring || [];
 
-  const filtered = keyring.filter((e) => e.publicKeyHex !== hex);
-  await chrome.storage.local.set({ keyring: filtered });
-  console.log(`[commit] Removed key from keyring: ${hex.slice(0, 8)}...`);
-  return { success: true };
+  return new Promise((resolve) => {
+    keyringMutex = keyringMutex.then(async () => {
+      const stored = await chrome.storage.local.get("keyring");
+      const keyring: KeyringEntry[] = stored.keyring || [];
+
+      const filtered = keyring.filter((e) => e.publicKeyHex !== hex);
+      const removed = filtered.length < keyring.length;
+      await chrome.storage.local.set({ keyring: filtered });
+      console.log(`[commit] Removed key from keyring: ${hex.slice(0, 8)}...`);
+      resolve({ success: removed });
+    });
+  });
 }
 
 // === Network Query ===
@@ -326,8 +340,10 @@ async function handleNetworkQuery(
   // Hash each contact's public key (the backend stores hashes, not raw keys)
   const keyHashes: string[] = [];
   for (const entry of keyring) {
+    const chunks = entry.publicKeyHex.match(/.{2}/g);
+    if (!chunks) continue;
     const bytes = new Uint8Array(
-      entry.publicKeyHex.match(/.{2}/g)!.map((b) => parseInt(b, 16))
+      chunks.map((b) => parseInt(b, 16))
     );
     const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
     const hex = Array.from(new Uint8Array(hashBuf))

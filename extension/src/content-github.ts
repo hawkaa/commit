@@ -237,38 +237,44 @@ async function fetchTrustCard(
 ): Promise<TrustCardData | null> {
   const cacheKey = `trust-card:${kind}:${id}`;
   const cached = await chrome.storage.local.get(cacheKey);
+  let data: TrustCardData | null = null;
+
   if (cached[cacheKey]) {
-    const { data, timestamp } = cached[cacheKey] as {
+    const entry = cached[cacheKey] as {
       data: TrustCardData;
       timestamp: number;
     };
-    if (Date.now() - timestamp < CACHE_TTL_MS) return data;
+    if (Date.now() - entry.timestamp < CACHE_TTL_MS) {
+      data = entry.data;
+    }
   }
 
-  const resp = await fetch(
-    `${API_BASE}/trust-card?kind=${kind}&id=${encodeURIComponent(id)}`
-  );
-  if (!resp.ok) return null;
+  if (!data) {
+    const resp = await fetch(
+      `${API_BASE}/trust-card?kind=${kind}&id=${encodeURIComponent(id)}`
+    );
+    if (!resp.ok) return null;
 
-  const data: TrustCardData = await resp.json();
+    data = (await resp.json()) as TrustCardData;
+    await chrome.storage.local.set({
+      [cacheKey]: { data, timestamp: Date.now() },
+    });
+  }
 
-  // Query network endorsements (background handles keyring + hashing)
+  // Query network endorsements fresh every time (not cached — depends on user's keyring)
   try {
     const networkData = await chrome.runtime.sendMessage({
       type: "NETWORK_QUERY",
       subjectKind: kind,
       subjectId: id,
     });
-    if (networkData) {
+    if (networkData && data) {
       data.network_data = networkData as NetworkData;
     }
   } catch {
     // Network query is non-critical; proceed without it
   }
 
-  await chrome.storage.local.set({
-    [cacheKey]: { data, timestamp: Date.now() },
-  });
   return data;
 }
 

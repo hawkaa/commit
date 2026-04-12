@@ -1197,6 +1197,24 @@ async fn network_query_invalid_hex_returns_400() {
 }
 
 #[tokio::test]
+async fn network_query_unknown_subject_returns_zeros() {
+    let server = test_app();
+    let key_a = "a".repeat(64);
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "nonexistent/repo",
+            "key_hashes": [key_a]
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::OK);
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["network_endorsement_count"], 0);
+    assert_eq!(body["total_endorsement_count"], 0);
+}
+
+#[tokio::test]
 async fn network_query_invalid_kind_returns_400() {
     let server = test_app();
     let key_a = "a".repeat(64);

@@ -44,8 +44,16 @@ pub async fn network_query(
 
     let subject = db
         .find_subject(&kind, &req.id)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Return zeros for unknown subjects instead of 404 to avoid leaking
+    // which subjects have been indexed.
+    let Some(subject) = subject else {
+        return Ok(Json(NetworkQueryResponse {
+            network_endorsement_count: 0,
+            total_endorsement_count: 0,
+        }));
+    };
 
     let total_endorsement_count = db
         .get_endorsement_count(&subject.id)
