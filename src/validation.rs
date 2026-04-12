@@ -1,4 +1,5 @@
 use axum::http::StatusCode;
+use k256::ecdsa::signature::Verifier;
 
 use crate::models::ProofType;
 
@@ -102,9 +103,80 @@ fn is_valid_path_component(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
 }
 
+/// Verify that a TLSNotary attestation was signed by the trusted notary.
+///
+/// Deserializes the attestation from BCS bytes, extracts the header, and
+/// verifies the ECDSA-secp256k1 signature against `trusted_key`.
+pub fn verify_attestation_signature(
+    attestation_bytes: &[u8],
+    trusted_key: &k256::ecdsa::VerifyingKey,
+) -> Result<(), StatusCode> {
+    let attestation: tlsn_core::attestation::Attestation =
+        bcs::from_bytes(attestation_bytes).map_err(|e| {
+            tracing::warn!("Attestation BCS deserialization failed: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    if attestation.signature.alg != tlsn_core::signing::SignatureAlgId::SECP256K1 {
+        tracing::warn!(
+            "Unexpected attestation signature algorithm: {}",
+            attestation.signature.alg
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let header_bytes = bcs::to_bytes(&attestation.header).map_err(|e| {
+        tracing::warn!("Failed to BCS-serialize attestation header: {e}");
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let signature =
+        k256::ecdsa::Signature::from_slice(&attestation.signature.data).map_err(|e| {
+            tracing::warn!("Malformed attestation signature: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    trusted_key
+        .verify(&header_bytes, &signature)
+        .map_err(|_| {
+            tracing::warn!("Attestation signature verification failed — not signed by trusted notary");
+            StatusCode::UNAUTHORIZED
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use k256::ecdsa::SigningKey;
+    use k256::elliptic_curve::rand_core::OsRng;
+
+    fn random_verifying_key() -> k256::ecdsa::VerifyingKey {
+        let signing = SigningKey::random(&mut OsRng);
+        *signing.verifying_key()
+    }
+
+    #[test]
+    fn attestation_garbage_bytes_returns_400() {
+        let key = random_verifying_key();
+        let result = super::verify_attestation_signature(b"not-valid-bcs", &key);
+        assert_eq!(result.unwrap_err(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn attestation_empty_bytes_returns_400() {
+        let key = random_verifying_key();
+        let result = super::verify_attestation_signature(&[], &key);
+        assert_eq!(result.unwrap_err(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn attestation_truncated_bytes_returns_400() {
+        let key = random_verifying_key();
+        // A few random bytes — too short to be a valid Attestation
+        let result = super::verify_attestation_signature(&[0x01, 0x02, 0x03, 0x04], &key);
+        assert_eq!(result.unwrap_err(), StatusCode::BAD_REQUEST);
+    }
 
     #[test]
     fn valid_git_history_transcript() {
