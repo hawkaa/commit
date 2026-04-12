@@ -834,7 +834,11 @@ async fn endorsement_appears_in_trust_card_response() {
     assert_eq!(endorsement["status"], "pending_attestation");
 
     // Re-seed cache after endorsement (endorsement creation invalidates the cache,
-    // and without a live GitHub API the trust card fetch would fail)
+    // and without a live GitHub API the trust card fetch would fail).
+    // NOTE: This re-seeds with layer1_only:true, so it does NOT exercise the real
+    // score computation path with endorsements factored in. The score computation
+    // with endorsements is covered by the score.rs unit tests. This test verifies
+    // the trust card response structure and endorsement visibility, not L2 weighting.
     {
         let db = state.db.lock().unwrap();
         let stored = db
