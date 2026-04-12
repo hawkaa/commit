@@ -147,6 +147,18 @@ impl Database {
             )?;
         }
 
+        // Migration: add endorser_key_hash column for network keyring queries.
+        let has_endorser_key_hash: bool = self
+            .conn
+            .prepare("SELECT endorser_key_hash FROM endorsements LIMIT 0")
+            .is_ok();
+        if !has_endorser_key_hash {
+            self.conn.execute_batch(
+                "ALTER TABLE endorsements ADD COLUMN endorser_key_hash TEXT;
+                 CREATE INDEX IF NOT EXISTS idx_endorsements_key_hash ON endorsements(endorser_key_hash);",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -205,6 +217,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_endorsement(
         &self,
         id: &Uuid,
@@ -213,10 +226,11 @@ impl Database {
         proof_hash: &[u8],
         proof_type: &str,
         attestation_data: Option<&[u8]>,
+        endorser_key_hash: Option<&str>,
     ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type, attestation_data)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type, attestation_data, endorser_key_hash)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
                 id.to_string(),
                 subject_id.to_string(),
@@ -224,6 +238,7 @@ impl Database {
                 proof_hash,
                 proof_type,
                 attestation_data,
+                endorser_key_hash,
             ],
         )?;
         Ok(())

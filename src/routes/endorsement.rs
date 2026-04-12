@@ -18,6 +18,7 @@ pub struct SubmitEndorsementRequest {
     pub proof_type: String,
     pub transcript_sent: String,
     pub transcript_recv: Option<String>,
+    pub endorser_key_hash: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -63,6 +64,13 @@ pub async fn submit_endorsement(
 
     let proof_hash = Sha256::digest(&attestation_bytes).to_vec();
 
+    // Validate endorser_key_hash format when present: must be 64-char hex (SHA-256 output)
+    if let Some(ref kh) = req.endorser_key_hash
+        && (kh.len() != 64 || !kh.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     let db = state
         .db
         .lock()
@@ -96,6 +104,7 @@ pub async fn submit_endorsement(
         &proof_hash,
         proof_type.as_str(),
         Some(&attestation_bytes),
+        req.endorser_key_hash.as_deref(),
     )
     .map_err(map_db_error)?;
 

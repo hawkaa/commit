@@ -854,3 +854,126 @@ async fn endorsement_appears_in_trust_card_response() {
         "endorsement category should match"
     );
 }
+
+// --- Endorser key hash tests ---
+
+#[tokio::test]
+async fn endorsement_with_key_hash_stores_hash() {
+    let (server, state) = build_app();
+    let key_hash = "a".repeat(64); // valid 64-char hex
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "keyhash-org/keyhash-repo".to_string(),
+            display_name: "keyhash-org/keyhash-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+        let stored = db
+            .find_subject(&SubjectKind::GithubRepo, "keyhash-org/keyhash-repo")
+            .unwrap()
+            .unwrap();
+        db.cache_signals(
+            &stored.id,
+            r#"[{"source":"registry","category":"longevity","label":"Age","value":"1yr","verification":"public_api","timestamp":"2023-01-01","confidence":0.9}]"#,
+            r#"{"score":50,"breakdown":{"longevity":5.0,"maintenance":5.0,"community":5.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+        )
+        .unwrap();
+    }
+
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "keyhash-org/keyhash-repo",
+            "category": "usage",
+            "attestation": "deadbeef11223344aabbccdd",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/keyhash-org/keyhash-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "endorser_key_hash": key_hash
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert!(body["id"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn endorsement_without_key_hash_backward_compat() {
+    let (server, state) = build_app();
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "compat-org/compat-repo".to_string(),
+            display_name: "compat-org/compat-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+        let stored = db
+            .find_subject(&SubjectKind::GithubRepo, "compat-org/compat-repo")
+            .unwrap()
+            .unwrap();
+        db.cache_signals(
+            &stored.id,
+            r#"[{"source":"registry","category":"longevity","label":"Age","value":"1yr","verification":"public_api","timestamp":"2023-01-01","confidence":0.9}]"#,
+            r#"{"score":50,"breakdown":{"longevity":5.0,"maintenance":5.0,"community":5.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+        )
+        .unwrap();
+    }
+
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "compat-org/compat-repo",
+            "category": "usage",
+            "attestation": "deadbeef55667788",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/compat-org/compat-repo HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert!(body["id"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn endorsement_invalid_key_hash_returns_400() {
+    let server = test_app();
+
+    // Too short
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "endorser_key_hash": "tooshort"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+    // Non-hex characters
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "endorser_key_hash": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
