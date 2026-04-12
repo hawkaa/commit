@@ -194,6 +194,12 @@ use axum::http::HeaderValue;
 use serial_test::serial;
 
 fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> serde_json::Value {
+    let transcript_sent = match proof_type {
+        "ci_logs" => format!(
+            "GET /repos/{subject_id}/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n"
+        ),
+        _ => format!("GET /repos/{subject_id} HTTP/1.1\r\nHost: api.github.com\r\n"),
+    };
     serde_json::json!({
         "server_name": "api.github.com",
         "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
@@ -205,7 +211,7 @@ fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> se
             "proof_type": proof_type
         },
         "transcript": {
-            "sent": format!("GET /repos/{subject_id} HTTP/1.1\r\nHost: api.github.com\r\n"),
+            "sent": transcript_sent,
             "recv": "HTTP/1.1 200 OK\r\n"
         },
         "attestation": "deadbeef01020304"
@@ -553,4 +559,88 @@ async fn webhook_duplicate_attestation_returns_409() {
     resp2.assert_status(axum::http::StatusCode::CONFLICT);
 
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+// --- ci_logs transcript binding tests ---
+
+#[tokio::test]
+#[serial]
+async fn webhook_ci_logs_happy_path() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-ci") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-ci");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&webhook_payload("github", "ci-org/ci-repo", "ci_logs"))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_ci_logs_missing_actions_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-ci2") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-ci2");
+    // Use a git_history-style transcript (no /actions/) but claim ci_logs proof type
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+            "session": {
+                "id": "ci-session-bad",
+                "subject_kind": "github",
+                "subject_id": "ci-org/ci-repo",
+                "proof_type": "ci_logs"
+            },
+            "transcript": {
+                "sent": "GET /repos/ci-org/ci-repo/commits HTTP/1.1\r\nHost: api.github.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n"
+            },
+            "attestation": "deadbeef01020304"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+async fn endorsement_post_ci_logs_happy_path() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "ci-org/ci-repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "ci_logs",
+            "transcript_sent": "GET /repos/ci-org/ci-repo/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    // Subject doesn't exist yet -> 404 (but transcript validation passed)
+    resp.assert_status(axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn endorsement_post_ci_logs_missing_actions_returns_400() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "ci_logs",
+            "transcript_sent": "GET /repos/owner/repo/commits HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
 }
