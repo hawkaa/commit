@@ -5,6 +5,7 @@ use axum::{
 
 use crate::AppState;
 use crate::models::{CommitScore, CommitmentSignal, ScoreBreakdown, Subject, SubjectKind};
+use crate::routes::endorsement::EndorsementSummary;
 use crate::services::score::{build_signals, score_github_repo};
 use uuid::Uuid;
 
@@ -99,7 +100,38 @@ async fn render_github_trust_page(
         (subject, signals, score)
     };
 
-    let html = render_html(&subject, &signals, &score, owner, repo_name);
+    // Query endorsement data
+    let (endorsement_count, recent_endorsements) = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let count = db.get_endorsement_count(&subject.id).unwrap_or(0);
+        let rows = db
+            .get_recent_endorsements(&subject.id, 10)
+            .unwrap_or_default();
+        let summaries: Vec<EndorsementSummary> = rows
+            .into_iter()
+            .map(|r| EndorsementSummary {
+                id: r.id,
+                category: r.category,
+                proof_type: r.proof_type,
+                status: r.status,
+                created_at: r.created_at,
+            })
+            .collect();
+        (count, summaries)
+    };
+
+    let html = render_html(
+        &subject,
+        &signals,
+        &score,
+        owner,
+        repo_name,
+        endorsement_count,
+        &recent_endorsements,
+    );
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -127,13 +159,15 @@ fn score_display(score: Option<u8>) -> String {
     score.map_or("\u{2014}".to_string(), |s| s.to_string())
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn render_html(
     _subject: &Subject,
     signals: &[CommitmentSignal],
     score: &CommitScore,
     owner: &str,
     repo: &str,
+    endorsement_count: u32,
+    recent_endorsements: &[EndorsementSummary],
 ) -> String {
     let (color_start, color_end) = score_color(score.score);
     let score_text = score_display(score.score);
@@ -161,6 +195,8 @@ fn render_html(
         .join("\n        ");
 
     let breakdown_html = render_breakdown(&score.breakdown);
+    let endorsements_html =
+        render_endorsements_section(endorsement_count, recent_endorsements);
 
     let layer_label = if score.layer1_only {
         r#"<span class="layer-badge">Public data only</span>"#
@@ -334,6 +370,54 @@ fn render_html(
       font-weight: 500;
       color: #1a1a2e;
     }}
+    .endorsement-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0eb;
+    }}
+    .endorsement-row:last-child {{ border-bottom: none; }}
+    .endorsement-info {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }}
+    .endorsement-category {{
+      font-size: 13px;
+      font-weight: 500;
+      color: #1a1a2e;
+    }}
+    .endorsement-proof {{
+      font-size: 11px;
+      color: #888;
+    }}
+    .endorsement-status {{
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }}
+    .endorsement-status--verified {{
+      background: rgba(124, 58, 237, 0.1);
+      color: #7c3aed;
+    }}
+    .endorsement-status--pending {{
+      background: #e5e5e0;
+      color: #888;
+    }}
+    .endorsement-time {{
+      font-size: 11px;
+      color: #aaa;
+    }}
+    .endorsement-empty {{
+      font-size: 13px;
+      color: #888;
+      padding: 8px 0;
+    }}
     .badge-section {{
       margin-top: 32px;
       padding: 24px;
@@ -411,6 +495,8 @@ fn render_html(
       {breakdown_html}
     </div>
 
+    {endorsements_html}
+
     <div class="badge-section">
       <div class="card-title">Add badge to README</div>
       <div class="badge-preview">
@@ -426,6 +512,61 @@ fn render_html(
   </div>
 </body>
 </html>"#
+    )
+}
+
+fn render_endorsements_section(
+    count: u32,
+    endorsements: &[EndorsementSummary],
+) -> String {
+    let title = if count > 0 {
+        format!("Endorsements ({count})")
+    } else {
+        "Endorsements".to_string()
+    };
+
+    let body = if endorsements.is_empty() {
+        r#"<div class="endorsement-empty">No endorsements yet. Install the Commit extension to endorse this repo.</div>"#.to_string()
+    } else {
+        let rows: String = endorsements
+            .iter()
+            .map(|e| {
+                let status_class = if e.status == "verified" {
+                    "endorsement-status--verified"
+                } else {
+                    "endorsement-status--pending"
+                };
+                let status_label = if e.status == "verified" {
+                    "ZK Verified"
+                } else {
+                    "Pending"
+                };
+                format!(
+                    r#"<div class="endorsement-row">
+          <div class="endorsement-info">
+            <span class="endorsement-category">{}</span>
+            <span class="endorsement-proof">{}</span>
+          </div>
+          <div>
+            <span class="endorsement-status {status_class}">{status_label}</span>
+            <span class="endorsement-time">{}</span>
+          </div>
+        </div>"#,
+                    html_escape(&e.category),
+                    html_escape(&e.proof_type),
+                    html_escape(&e.created_at),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n        ");
+        rows
+    };
+
+    format!(
+        r#"<div class="card">
+      <div class="card-title">{title}</div>
+      {body}
+    </div>"#
     )
 }
 
