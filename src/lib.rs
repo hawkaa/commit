@@ -7,6 +7,11 @@ use std::sync::Mutex;
 
 use services::{db::Database, github::GitHubClient};
 
+/// Max endorsements per subject within the rate limit window.
+pub const RATE_LIMIT_MAX_ENDORSEMENTS: u32 = 5;
+/// Sliding window in minutes for endorsement rate limiting.
+pub const RATE_LIMIT_WINDOW_MINUTES: i64 = 60;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: std::sync::Arc<Mutex<Database>>,

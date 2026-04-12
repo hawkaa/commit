@@ -194,6 +194,12 @@ use axum::http::HeaderValue;
 use serial_test::serial;
 
 fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> serde_json::Value {
+    let transcript_sent = match proof_type {
+        "ci_logs" => format!(
+            "GET /repos/{subject_id}/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n"
+        ),
+        _ => format!("GET /repos/{subject_id} HTTP/1.1\r\nHost: api.github.com\r\n"),
+    };
     serde_json::json!({
         "server_name": "api.github.com",
         "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
@@ -205,7 +211,7 @@ fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> se
             "proof_type": proof_type
         },
         "transcript": {
-            "sent": format!("GET /repos/{subject_id} HTTP/1.1\r\nHost: api.github.com\r\n"),
+            "sent": transcript_sent,
             "recv": "HTTP/1.1 200 OK\r\n"
         },
         "attestation": "deadbeef01020304"
@@ -317,8 +323,7 @@ async fn webhook_happy_path_creates_endorsement() {
 
 #[tokio::test]
 #[serial]
-async fn webhook_email_proof_type_blocked() {
-    // Email proof type is blocked until transcript binding is designed
+async fn webhook_email_proof_type_happy_path() {
     unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5") };
     let server = test_app();
     let (name, value) = auth_header("test-secret-5");
@@ -337,7 +342,68 @@ async fn webhook_email_proof_type_blocked() {
             },
             "transcript": {
                 "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n",
-                "recv": ""
+                "recv": "HTTP/1.1 200 OK\r\n\r\nCheck https://github.com/email-org/email-repo/issues/1"
+            },
+            "attestation": "deadbeef"
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_email_no_matching_recv_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5b") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-5b");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "mail.google.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "email-proof"}],
+            "session": {
+                "id": "email-session-bad",
+                "subject_kind": "github",
+                "subject_id": "email-org/email-repo",
+                "category": "usage",
+                "proof_type": "email"
+            },
+            "transcript": {
+                "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n\r\nNo repo URL here"
+            },
+            "attestation": "deadbeef"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_email_missing_recv_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5c") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-5c");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "mail.google.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "email-proof"}],
+            "session": {
+                "id": "email-session-no-recv",
+                "subject_kind": "github",
+                "subject_id": "email-org/email-repo",
+                "category": "usage",
+                "proof_type": "email"
+            },
+            "transcript": {
+                "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n"
             },
             "attestation": "deadbeef"
         }))
@@ -429,7 +495,7 @@ async fn endorsement_post_empty_attestation_returns_400() {
 }
 
 #[tokio::test]
-async fn endorsement_post_email_proof_type_blocked() {
+async fn endorsement_post_email_missing_recv_returns_400() {
     let server = test_app();
     let resp = server
         .post("/endorsements")
@@ -443,6 +509,25 @@ async fn endorsement_post_email_proof_type_blocked() {
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn endorsement_post_email_with_recv_validates() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "email",
+            "transcript_sent": "GET / HTTP/1.1\r\n",
+            "transcript_recv": "HTTP/1.1 200 OK\r\n\r\nhttps://github.com/owner/repo"
+        }))
+        .await;
+    // Subject doesn't exist -> 404 (but transcript validation passed)
+    resp.assert_status(axum::http::StatusCode::NOT_FOUND);
 }
 
 // --- Endorsement happy path + replay prevention tests ---
@@ -551,6 +636,149 @@ async fn webhook_duplicate_attestation_returns_409() {
         .json(&payload)
         .await;
     resp2.assert_status(axum::http::StatusCode::CONFLICT);
+
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+// --- ci_logs transcript binding tests ---
+
+#[tokio::test]
+#[serial]
+async fn webhook_ci_logs_happy_path() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-ci") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-ci");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&webhook_payload("github", "ci-org/ci-repo", "ci_logs"))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_ci_logs_missing_actions_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-ci2") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-ci2");
+    // Use a git_history-style transcript (no /actions/) but claim ci_logs proof type
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+            "session": {
+                "id": "ci-session-bad",
+                "subject_kind": "github",
+                "subject_id": "ci-org/ci-repo",
+                "proof_type": "ci_logs"
+            },
+            "transcript": {
+                "sent": "GET /repos/ci-org/ci-repo/commits HTTP/1.1\r\nHost: api.github.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n"
+            },
+            "attestation": "deadbeef01020304"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+async fn endorsement_post_ci_logs_happy_path() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "ci-org/ci-repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "ci_logs",
+            "transcript_sent": "GET /repos/ci-org/ci-repo/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    // Subject doesn't exist yet -> 404 (but transcript validation passed)
+    resp.assert_status(axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn endorsement_post_ci_logs_missing_actions_returns_400() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "ci_logs",
+            "transcript_sent": "GET /repos/owner/repo/commits HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+// --- Rate limiting tests ---
+
+#[tokio::test]
+#[serial]
+async fn webhook_rate_limit_triggers_after_5_endorsements() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-rate") };
+    let server = test_app();
+
+    // Submit 5 endorsements with unique attestations (different proof_hash each time)
+    for i in 0..5 {
+        let (name, value) = auth_header("test-secret-rate");
+        let resp = server
+            .post("/webhook/endorsement")
+            .add_header(name, value)
+            .json(&serde_json::json!({
+                "server_name": "api.github.com",
+                "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+                "session": {
+                    "id": format!("rate-session-{i}"),
+                    "subject_kind": "github",
+                    "subject_id": "rate-org/rate-repo",
+                    "proof_type": "git_history"
+                },
+                "transcript": {
+                    "sent": "GET /repos/rate-org/rate-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+                    "recv": "HTTP/1.1 200 OK\r\n"
+                },
+                "attestation": format!("deadbeef{i:08x}{i:08x}")
+            }))
+            .await;
+        resp.assert_status_ok();
+    }
+
+    // 6th submission should be rate-limited
+    let (name, value) = auth_header("test-secret-rate");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+            "session": {
+                "id": "rate-session-6",
+                "subject_kind": "github",
+                "subject_id": "rate-org/rate-repo",
+                "proof_type": "git_history"
+            },
+            "transcript": {
+                "sent": "GET /repos/rate-org/rate-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n"
+            },
+            "attestation": "deadbeef99999999"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::TOO_MANY_REQUESTS);
 
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
 }

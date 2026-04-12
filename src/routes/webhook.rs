@@ -8,6 +8,7 @@ use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
 use crate::services::db::map_db_error;
 use crate::validation::{validate_transcript_subject, verify_attestation_signature};
+use crate::{RATE_LIMIT_MAX_ENDORSEMENTS, RATE_LIMIT_WINDOW_MINUTES};
 
 /// Webhook payload from the TLSNotary verifier server.
 /// Sent after successful MPC-TLS verification of an endorsement proof.
@@ -103,7 +104,12 @@ pub async fn receive_endorsement_webhook(
     let kind = SubjectKind::parse(subject_kind_str).ok_or(StatusCode::BAD_REQUEST)?;
 
     // Validate transcript matches claimed subject (unconditional — always required)
-    validate_transcript_subject(&payload.transcript.sent, &proof_type, subject_id_str)?;
+    validate_transcript_subject(
+        &payload.transcript.sent,
+        payload.transcript.recv.as_deref(),
+        &proof_type,
+        subject_id_str,
+    )?;
 
     // Validate the server_name matches expected target for proof type
     let valid_server = match proof_type_str {
@@ -156,6 +162,20 @@ pub async fn receive_endorsement_webhook(
         .find_subject(&kind, subject_id_str)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Rate limit: max endorsements per subject within a time window
+    let recent_count = db
+        .count_recent_endorsements(&subject.id, RATE_LIMIT_WINDOW_MINUTES)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if recent_count >= RATE_LIMIT_MAX_ENDORSEMENTS {
+        tracing::warn!(
+            "Rate limit exceeded for subject {}: {} endorsements in last {} minutes",
+            subject.id,
+            recent_count,
+            RATE_LIMIT_WINDOW_MINUTES
+        );
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
 
     // Create the endorsement with verified status
     let endorsement_id = Uuid::new_v4();

@@ -6,8 +6,13 @@ use crate::models::signal::{
 };
 use crate::services::github::GitHubRepo;
 
-#[must_use]
-pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitScore {
+/// Weight for verified endorsements in score calculation.
+pub const VERIFIED_WEIGHT: f64 = 1.0;
+/// Weight for pending_attestation endorsements (lower trust).
+pub const PENDING_WEIGHT: f64 = 0.3;
+
+/// Compute the Layer 1 breakdown from GitHub repo signals.
+fn layer1_breakdown(repo: &GitHubRepo, contributor_count: usize) -> ScoreBreakdown {
     let years_active = years_since(&repo.created_at);
     let days_since_push = days_since(&repo.pushed_at);
     let maintenance_proxy = if days_since_push < 30.0 {
@@ -21,20 +26,62 @@ pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitS
     #[allow(clippy::cast_precision_loss)]
     let community = (contributor_count as f64 * 0.5).min(10.0);
 
-    let breakdown = ScoreBreakdown {
+    ScoreBreakdown {
         longevity: (years_active * 3.0).min(15.0),
         maintenance: maintenance_proxy,
         community,
         financial: 0.0,
         ..ScoreBreakdown::default()
-    };
+    }
+}
 
+#[must_use]
+pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitScore {
+    let breakdown = layer1_breakdown(repo, contributor_count);
     let score = compute_score(&breakdown, false);
 
     CommitScore {
         score,
         breakdown,
         layer1_only: true,
+    }
+}
+
+/// Compute a commit score that factors in endorsement status weighting.
+///
+/// Verified endorsements count fully, pending ones are down-weighted.
+/// Layer 2 scoring activates when any non-failed endorsements exist.
+#[must_use]
+pub fn score_github_repo_with_endorsements(
+    repo: &GitHubRepo,
+    contributor_count: usize,
+    verified_count: u32,
+    pending_count: u32,
+) -> CommitScore {
+    let mut breakdown = layer1_breakdown(repo, contributor_count);
+
+    let has_layer2 = verified_count > 0 || pending_count > 0;
+
+    #[allow(clippy::cast_precision_loss)]
+    let weighted_sum =
+        f64::from(verified_count) * VERIFIED_WEIGHT + f64::from(pending_count) * PENDING_WEIGHT;
+
+    breakdown.endorsements = (weighted_sum * 5.0).min(30.0);
+
+    #[allow(clippy::cast_precision_loss)]
+    let total = f64::from(verified_count + pending_count);
+    breakdown.proof_strength = if total > 0.0 {
+        (weighted_sum / total) * 15.0
+    } else {
+        0.0
+    };
+
+    let score = compute_score(&breakdown, has_layer2);
+
+    CommitScore {
+        score,
+        breakdown,
+        layer1_only: !has_layer2,
     }
 }
 

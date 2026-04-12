@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::models::{CommitScore, CommitmentSignal, ScoreBreakdown, Subject, SubjectKind};
-use crate::services::score::{build_signals, score_github_repo};
+use crate::services::score::{build_signals, score_github_repo, score_github_repo_with_endorsements};
 
 #[derive(Deserialize)]
 pub struct TrustCardQuery {
@@ -86,7 +86,6 @@ async fn get_github_trust_card(
         .await
         .unwrap_or(0);
 
-    let score = score_github_repo(&gh_repo, contributor_count);
     let signals = build_signals(&gh_repo, contributor_count);
 
     let candidate = Subject {
@@ -108,6 +107,17 @@ async fn get_github_trust_card(
         .find_subject(&SubjectKind::GithubRepo, identifier)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Compute score with endorsement status weighting
+    let (verified_count, pending_count) = db
+        .get_endorsement_counts_by_status(&subject.id)
+        .unwrap_or((0, 0));
+    let score = if verified_count > 0 || pending_count > 0 {
+        score_github_repo_with_endorsements(&gh_repo, contributor_count, verified_count, pending_count)
+    } else {
+        score_github_repo(&gh_repo, contributor_count)
+    };
+
     let _ = db.cache_signals(
         &subject.id,
         &serde_json::to_string(&signals).unwrap_or_default(),

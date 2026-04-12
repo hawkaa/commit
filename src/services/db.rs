@@ -275,6 +275,19 @@ impl Database {
         Ok(())
     }
 
+    pub fn count_recent_endorsements(
+        &self,
+        subject_id: &Uuid,
+        window_minutes: i64,
+    ) -> Result<u32> {
+        let count: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND created_at > datetime('now', '-' || ? || ' minutes')",
+            params![subject_id.to_string(), window_minutes],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     pub fn get_endorsement_count(&self, subject_id: &Uuid) -> Result<u32> {
         let count: u32 = self.conn.query_row(
             "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status != 'failed'",
@@ -282,6 +295,32 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Returns `(verified_count, pending_count)` for non-failed endorsements.
+    pub fn get_endorsement_counts_by_status(
+        &self,
+        subject_id: &Uuid,
+    ) -> Result<(u32, u32)> {
+        let mut stmt = self.conn.prepare(
+            "SELECT status, COUNT(*) FROM endorsements \
+             WHERE subject_id = ? AND status IN ('verified', 'pending_attestation') \
+             GROUP BY status",
+        )?;
+        let mut verified: u32 = 0;
+        let mut pending: u32 = 0;
+        let rows = stmt.query_map(params![subject_id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?;
+        for row in rows {
+            let (status, count) = row?;
+            match status.as_str() {
+                "verified" => verified = count,
+                "pending_attestation" => pending = count,
+                _ => {}
+            }
+        }
+        Ok((verified, pending))
     }
 
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.
