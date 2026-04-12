@@ -7,7 +7,7 @@ use crate::AppState;
 use crate::models::{
     CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind,
 };
-use crate::services::score::{build_signals, score_github_repo};
+use crate::services::score::{build_signals, score_github_repo, score_github_repo_with_endorsements};
 use uuid::Uuid;
 
 #[allow(clippy::missing_errors_doc)]
@@ -72,7 +72,6 @@ async fn render_github_trust_page(
             .await
             .unwrap_or(0);
 
-        let score = score_github_repo(&gh_repo, contributor_count);
         let signals = build_signals(&gh_repo, contributor_count);
 
         let candidate = Subject {
@@ -92,6 +91,27 @@ async fn render_github_trust_page(
             .find_subject(&SubjectKind::GithubRepo, identifier)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
             .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        // Compute score with endorsement status weighting
+        let (verified_count, pending_count) = db
+            .get_endorsement_counts_by_status(&subject.id)
+            .unwrap_or((0, 0));
+        let score = if verified_count > 0 || pending_count > 0 {
+            let avg_tenure_months = db
+                .get_endorsement_tenure_months(&subject.id)
+                .unwrap_or(0.0);
+            score_github_repo_with_endorsements(
+                &gh_repo,
+                contributor_count,
+                verified_count,
+                pending_count,
+                avg_tenure_months,
+                0, // unique_endorser_count: not yet available (network keyring)
+            )
+        } else {
+            score_github_repo(&gh_repo, contributor_count)
+        };
+
         let _ = db.cache_signals(
             &subject.id,
             &serde_json::to_string(&signals).unwrap_or_default(),

@@ -338,6 +338,28 @@ impl Database {
         rows.collect()
     }
 
+    /// Returns the average age (in months) of non-failed endorsements for a subject.
+    /// Uses `julianday()` to compute months since each endorsement was created.
+    /// Returns 0.0 if the subject has no endorsements.
+    pub fn get_endorsement_tenure_months(&self, subject_id: &Uuid) -> Result<f64> {
+        let avg: f64 = self.conn.query_row(
+            "SELECT COALESCE(AVG((julianday('now') - julianday(created_at)) / 30.44), 0.0) \
+             FROM endorsements WHERE subject_id = ? AND status != 'failed'",
+            params![subject_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok(avg)
+    }
+
+    /// Deletes the cached signal data for a subject, forcing recomputation on the next request.
+    pub fn invalidate_signal_cache(&self, subject_id: &Uuid) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM signal_cache WHERE subject_id = ?",
+            params![subject_id.to_string()],
+        )?;
+        Ok(())
+    }
+
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.
     /// Returns `None` if missing or stale (older than `CACHE_TTL_SECS`).
     pub fn get_cached_signals(&self, subject_id: &Uuid) -> Result<Option<(String, String)>> {

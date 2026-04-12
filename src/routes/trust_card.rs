@@ -135,11 +135,16 @@ async fn get_github_trust_card(
         .get_endorsement_counts_by_status(&subject.id)
         .unwrap_or((0, 0));
     let score = if verified_count > 0 || pending_count > 0 {
+        let avg_tenure_months = db
+            .get_endorsement_tenure_months(&subject.id)
+            .unwrap_or(0.0);
         score_github_repo_with_endorsements(
             &gh_repo,
             contributor_count,
             verified_count,
             pending_count,
+            avg_tenure_months,
+            0, // unique_endorser_count: not yet available (network keyring)
         )
     } else {
         score_github_repo(&gh_repo, contributor_count)
