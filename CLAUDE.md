@@ -74,9 +74,9 @@ Do not deviate without explicit user approval.
 - [x] Follow-up from P0 plan: deprecate webhook hash_verification_results fallback
 - [x] Follow-up from P0 plan: score integrity without device binding (weight pending_attestation lower) — see same plan
 - [x] Follow-up from P0 plan: validate single HTTP request line in revealed transcript (pipelining defense) — see same plan
-- [ ] Network keyring + key sharing — see `docs/plans/2026-04-12-006-feat-network-keyring-key-sharing-plan.md`
-- [ ] L2 attestation for endorsements — see `docs/plans/2026-04-12-007-feat-l2-attestation-submission-plan.md`
-- [ ] Commit Score v2 (Layer 1 + Layer 2) — see `docs/plans/2026-04-12-008-feat-commit-score-v2-plan.md`
+- [x] Network keyring + key sharing — see `docs/plans/2026-04-12-006-feat-network-keyring-key-sharing-plan.md`
+- [x] L2 attestation for endorsements — see `docs/plans/2026-04-12-007-feat-l2-attestation-submission-plan.md`
+- [x] Commit Score v2 (Layer 1 + Layer 2) — see `docs/plans/2026-04-12-008-feat-commit-score-v2-plan.md`
 
 ### Phase 3 — Network + Launch (weeks 6-9)
 - [ ] "N in your network endorse this" display
