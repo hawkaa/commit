@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
 use crate::services::db::map_db_error;
-use crate::validation::validate_transcript_subject;
+use crate::validation::{validate_transcript_subject, verify_attestation_signature};
 
 #[derive(Deserialize)]
 pub struct SubmitEndorsementRequest {
@@ -46,6 +46,12 @@ pub async fn submit_endorsement(
     if attestation_bytes.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
+
+    // Verify attestation signature when notary public key is configured
+    if let Some(ref key) = state.notary_public_key {
+        verify_attestation_signature(&attestation_bytes, key)?;
+    }
+
     let proof_hash = Sha256::digest(&attestation_bytes).to_vec();
 
     let db = state
