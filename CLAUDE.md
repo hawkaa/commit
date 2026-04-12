@@ -56,6 +56,9 @@ Do not deviate without explicit user approval.
 - [x] OG meta tags on trust card pages (social previews)
 - [x] L2 contract deployment (Base Sepolia: `0x08AE2e7fd94130645725Afc69e9BE2140f2395d7`)
 
+### Infrastructure
+- [ ] GitHub Actions CI/CD: auto-deploy backend + verifier to Fly.io on push to main (test-gated)
+
 ### Phase 2 — TLSNotary + Endorsements (weeks 3-6)
 - [x] TLSNotary research spike (MPC-TLS, ~5s proving time benchmarked)
 - [x] Extension offscreen WASM integration (tlsn-wasm, offscreen.html/js)
