@@ -11,7 +11,7 @@ use services::{db::Database, github::GitHubClient};
 pub struct AppState {
     pub db: std::sync::Arc<Mutex<Database>>,
     pub github: std::sync::Arc<GitHubClient>,
-    /// TLSNotary notary server public key (PEM). Used for attestation signature
-    /// verification once implemented. `None` if NOTARY_PUBLIC_KEY is not set.
-    pub notary_public_key: Option<String>,
+    /// Parsed TLSNotary notary server public key for attestation signature
+    /// verification. `None` if NOTARY_PUBLIC_KEY is not set (verification skipped).
+    pub notary_public_key: Option<k256::ecdsa::VerifyingKey>,
 }

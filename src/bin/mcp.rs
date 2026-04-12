@@ -16,7 +16,11 @@ async fn main() {
     let db = Database::open(&db_path).expect("Failed to open database");
     let github = GitHubClient::new(github_token);
 
-    let notary_public_key = std::env::var("NOTARY_PUBLIC_KEY").ok();
+    let notary_public_key = std::env::var("NOTARY_PUBLIC_KEY").ok().map(|pem| {
+        use k256::pkcs8::DecodePublicKey;
+        k256::ecdsa::VerifyingKey::from_public_key_pem(&pem)
+            .expect("NOTARY_PUBLIC_KEY contains invalid PEM — cannot start")
+    });
 
     let state = AppState {
         db: Arc::new(Mutex::new(db)),

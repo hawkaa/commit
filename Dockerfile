@@ -1,6 +1,6 @@
 FROM rust:1.94-alpine AS builder
 
-RUN apk add --no-cache musl-dev gcc make pkgconfig lld
+RUN apk add --no-cache musl-dev gcc make pkgconfig lld git
 
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 

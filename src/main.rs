@@ -20,18 +20,23 @@ async fn main() {
 
     let github_token = std::env::var("GITHUB_TOKEN").ok();
     let db_path = std::env::var("DATABASE_PATH").unwrap_or_else(|_| "commit.db".to_string());
-    let notary_public_key = std::env::var("NOTARY_PUBLIC_KEY").ok();
-
-    if let Some(ref key) = notary_public_key {
-        let body: String = key
-            .lines()
-            .filter(|l| !l.starts_with("-----"))
-            .collect();
-        let fingerprint = &body[body.len().saturating_sub(12)..];
-        tracing::info!("Notary public key loaded (tail: ...{fingerprint})");
-    } else {
-        tracing::warn!("NOTARY_PUBLIC_KEY not set — attestation signature verification unavailable");
-    }
+    let notary_public_key = match std::env::var("NOTARY_PUBLIC_KEY") {
+        Ok(pem) => {
+            use k256::pkcs8::DecodePublicKey;
+            let key = k256::ecdsa::VerifyingKey::from_public_key_pem(&pem)
+                .expect("NOTARY_PUBLIC_KEY contains invalid PEM — cannot start");
+            let sec1 = key.to_encoded_point(true);
+            let fingerprint = hex::encode(&sec1.as_bytes()[sec1.len().saturating_sub(6)..]);
+            tracing::info!("Notary public key loaded (tail: ...{fingerprint})");
+            Some(key)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "NOTARY_PUBLIC_KEY not set — attestation signature verification unavailable"
+            );
+            None
+        }
+    };
 
     let db = Database::open(&db_path).expect("Failed to open database");
     let github = GitHubClient::new(github_token);
