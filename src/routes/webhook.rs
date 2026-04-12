@@ -195,6 +195,9 @@ pub async fn receive_endorsement_webhook(
     db.update_endorsement_status(&endorsement_id, "verified")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Invalidate cached score so the next trust card request recomputes with the new endorsement
+    let _ = db.invalidate_signal_cache(&subject.id);
+
     // Create attestation record (pending L2 submission)
     let attestation_id = Uuid::new_v4();
     db.create_attestation(&attestation_id, &endorsement_id, "base_sepolia")
