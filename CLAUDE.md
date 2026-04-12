@@ -60,7 +60,7 @@ Do not deviate without explicit user approval.
 - [x] TLSNotary research spike (MPC-TLS, ~5s proving time benchmarked)
 - [x] Extension offscreen WASM integration (tlsn-wasm, offscreen.html/js)
 - [x] Backend webhook endpoint (POST /webhook/endorsement)
-- [ ] Own Notary server (Docker image + Fly.io, using public notary.pse.dev for PoC)
+- [x] Own Notary server (Docker image + Fly.io, using public notary.pse.dev for PoC) — see `docs/plans/2026-04-12-001-feat-own-notary-server-plan.md`
 - [ ] ZK-verified endorsement flow end-to-end
 - [x] P0: Bind proof_hash to cryptographic attestation (currently hashes attacker-controlled payload fields) — see `docs/plans/2026-04-11-001-fix-proof-binding-security-plan.md`
 - [x] P0: Bind session.data subject to proof transcript (proof for repo A can currently endorse repo B) — see same plan

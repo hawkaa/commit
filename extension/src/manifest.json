@@ -11,6 +11,8 @@
     "https://www.google.no/*",
     "https://notary.pse.dev/*",
     "wss://notary.pse.dev/*",
+    "https://commit-verifier.fly.dev/*",
+    "wss://commit-verifier.fly.dev/*",
     "https://api.github.com/*",
     "https://commit-backend.fly.dev/*"
   ],

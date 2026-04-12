@@ -15,6 +15,7 @@ fn test_app() -> TestServer {
     let state = AppState {
         db: Arc::new(Mutex::new(db)),
         github: Arc::new(github),
+        notary_public_key: None,
     };
     let app = Router::new()
         .route(

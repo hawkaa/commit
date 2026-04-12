@@ -2,6 +2,19 @@
 
 All notable changes to Commit will be documented in this file.
 
+## [0.1.2.0] - 2026-04-12
+
+### Added
+- Own TLSNotary notary server deployed to Fly.io (`commit-verifier.fly.dev`) with persistent secp256k1 signing key
+- Notary server Dockerfile, config.yaml, and entrypoint.sh for key injection from Fly secrets
+- `NOTARY_PUBLIC_KEY` config in backend AppState for future attestation signature verification
+- Extension host_permissions for the own notary server domain
+
+### Changed
+- Extension `NOTARY_URL` points to `commit-verifier.fly.dev` instead of public `notary.pse.dev`
+- WebSocket proxy (`PROXY_BASE`) remains on `notary.pse.dev` (stateless, deferred)
+- Notary server fly.toml switched from image reference to local Dockerfile build
+
 ## [0.1.1.0] - 2026-04-11
 
 ### Added

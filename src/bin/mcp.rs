@@ -16,9 +16,12 @@ async fn main() {
     let db = Database::open(&db_path).expect("Failed to open database");
     let github = GitHubClient::new(github_token);
 
+    let notary_public_key = std::env::var("NOTARY_PUBLIC_KEY").ok();
+
     let state = AppState {
         db: Arc::new(Mutex::new(db)),
         github: Arc::new(github),
+        notary_public_key,
     };
 
     let stdin = io::stdin();
