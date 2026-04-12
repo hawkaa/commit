@@ -177,11 +177,29 @@ async function startEndorsement(
       }, 3000);
     } else {
       console.error("[commit] Endorsement failed:", result.error);
-      resetEndorseButton(btn, "Failed");
+      const label = errorCodeToLabel(result.errorCode);
+      resetEndorseButton(btn, label);
     }
   } catch (err) {
     console.error("[commit] Endorsement error:", err);
-    resetEndorseButton(btn, "Error");
+    resetEndorseButton(btn, "Offline");
+  }
+}
+
+function errorCodeToLabel(code?: string): string {
+  switch (code) {
+    case "notary_offline":
+      return "Notary offline";
+    case "timeout":
+      return "Timed out";
+    case "duplicate":
+      return "Already endorsed";
+    case "network":
+      return "Offline";
+    case "backend_error":
+    case "prove_failed":
+    default:
+      return "Failed";
   }
 }
 

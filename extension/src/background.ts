@@ -15,6 +15,7 @@ interface ProveResult {
   transcriptSent?: string;
   elapsed?: number;
   error?: string;
+  errorCode?: string;
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -100,23 +101,69 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
+const ENDORSEMENT_TIMEOUT_MS = 60000;
+
 async function handleStartEndorsement(
   msg: EndorsementMessage
 ): Promise<ProveResult> {
   const { repoOwner, repoName } = msg;
   console.log(`[commit] Starting endorsement for ${repoOwner}/${repoName}`);
 
-  await ensureOffscreenDocument();
+  // Wrap the entire flow in a timeout
+  const timeoutPromise = new Promise<ProveResult>((resolve) =>
+    setTimeout(
+      () => resolve({ success: false, error: "Timeout", errorCode: "timeout" }),
+      ENDORSEMENT_TIMEOUT_MS
+    )
+  );
 
-  const result: ProveResult = await chrome.runtime.sendMessage({
-    type: "PROVE_ENDORSEMENT",
-    repoOwner,
-    repoName,
-  });
+  const flowPromise = runEndorsementFlow(repoOwner, repoName);
+  return Promise.race([flowPromise, timeoutPromise]);
+}
+
+async function runEndorsementFlow(
+  repoOwner: string,
+  repoName: string
+): Promise<ProveResult> {
+  try {
+    await ensureOffscreenDocument();
+  } catch (err) {
+    console.error("[commit] Failed to create offscreen document:", err);
+    return {
+      success: false,
+      error: "Notary offline",
+      errorCode: "notary_offline",
+    };
+  }
+
+  let result: ProveResult;
+  try {
+    result = await chrome.runtime.sendMessage({
+      type: "PROVE_ENDORSEMENT",
+      repoOwner,
+      repoName,
+    });
+  } catch (err) {
+    console.error("[commit] Proof generation error:", err);
+    return {
+      success: false,
+      error: "Notary offline",
+      errorCode: "notary_offline",
+    };
+  }
 
   if (!result.success) {
     console.error("[commit] Proof generation failed:", result.error);
-    return result;
+    // Check if the error indicates notary connectivity issues
+    const errMsg = (result.error ?? "").toLowerCase();
+    if (
+      errMsg.includes("notary") ||
+      errMsg.includes("connect") ||
+      errMsg.includes("websocket")
+    ) {
+      return { ...result, errorCode: "notary_offline" };
+    }
+    return { ...result, errorCode: "prove_failed" };
   }
 
   console.log(`[commit] Proof generated in ${result.elapsed}ms`);
@@ -137,7 +184,17 @@ async function handleStartEndorsement(
 
     if (!resp.ok) {
       const text = await resp.text();
-      return { success: false, error: `Backend error: ${resp.status} ${text}` };
+      const errorCode =
+        resp.status === 409
+          ? "duplicate"
+          : resp.status === 400 || resp.status === 404
+            ? "backend_error"
+            : "backend_error";
+      return {
+        success: false,
+        error: `Backend error: ${resp.status} ${text}`,
+        errorCode,
+      };
     }
 
     const endorsement = await resp.json();
@@ -151,6 +208,7 @@ async function handleStartEndorsement(
     return {
       success: false,
       error: `Network error: ${(err as Error).message}`,
+      errorCode: "network",
     };
   }
 }
