@@ -30,14 +30,32 @@ pub struct TrustCardResponse {
     pub recent_endorsements: Vec<EndorsementSummary>,
 }
 
-fn map_endorsement_rows(rows: Vec<EndorsementRow>) -> Vec<EndorsementSummary> {
+fn map_endorsement_rows(
+    rows: Vec<EndorsementRow>,
+    db: &crate::services::db::Database,
+) -> Vec<EndorsementSummary> {
     rows.into_iter()
-        .map(|r| EndorsementSummary {
-            id: r.id,
-            category: r.category,
-            proof_type: r.proof_type,
-            status: r.status,
-            created_at: r.created_at,
+        .map(|r| {
+            let (on_chain, tx_hash) = db
+                .get_attestation_for_endorsement(&r.id)
+                .ok()
+                .flatten()
+                .map_or((false, None), |att| {
+                    if att.tx_hash.is_some() {
+                        (true, att.tx_hash)
+                    } else {
+                        (false, None)
+                    }
+                });
+            EndorsementSummary {
+                id: r.id,
+                category: r.category,
+                proof_type: r.proof_type,
+                status: r.status,
+                created_at: r.created_at,
+                on_chain,
+                tx_hash,
+            }
         })
         .collect()
 }
@@ -85,6 +103,7 @@ async fn get_github_trust_card(
             let recent_endorsements = map_endorsement_rows(
                 db.get_recent_endorsements(&subject.id, 5)
                     .unwrap_or_default(),
+                &db,
             );
             return Ok(Json(TrustCardResponse {
                 subject,
@@ -154,6 +173,7 @@ async fn get_github_trust_card(
     let recent_endorsements = map_endorsement_rows(
         db.get_recent_endorsements(&subject.id, 5)
             .unwrap_or_default(),
+        &db,
     );
 
     Ok(Json(TrustCardResponse {

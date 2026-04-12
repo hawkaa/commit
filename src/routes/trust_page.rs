@@ -113,12 +113,27 @@ async fn render_github_trust_page(
             .unwrap_or_default();
         let summaries: Vec<EndorsementSummary> = rows
             .into_iter()
-            .map(|r| EndorsementSummary {
-                id: r.id,
-                category: r.category,
-                proof_type: r.proof_type,
-                status: r.status,
-                created_at: r.created_at,
+            .map(|r| {
+                let (on_chain, tx_hash) = db
+                    .get_attestation_for_endorsement(&r.id)
+                    .ok()
+                    .flatten()
+                    .map_or((false, None), |att| {
+                        if att.tx_hash.is_some() {
+                            (true, att.tx_hash)
+                        } else {
+                            (false, None)
+                        }
+                    });
+                EndorsementSummary {
+                    id: r.id,
+                    category: r.category,
+                    proof_type: r.proof_type,
+                    status: r.status,
+                    created_at: r.created_at,
+                    on_chain,
+                    tx_hash,
+                }
             })
             .collect();
         (count, summaries)
@@ -409,6 +424,22 @@ fn render_html(
       background: #e5e5e0;
       color: #888;
     }}
+    .endorsement-onchain {{
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(22, 163, 74, 0.1);
+      color: #16a34a;
+      text-decoration: none;
+      margin-left: 4px;
+    }}
+    .endorsement-onchain:hover {{
+      background: rgba(22, 163, 74, 0.2);
+    }}
     .endorsement-time {{
       font-size: 11px;
       color: #aaa;
@@ -538,6 +569,18 @@ fn render_endorsements_section(count: u32, endorsements: &[EndorsementSummary]) 
                 } else {
                     "Pending"
                 };
+                let on_chain_tag = if e.on_chain {
+                    if let Some(ref hash) = e.tx_hash {
+                        format!(
+                            r#" <a href="https://sepolia.basescan.org/tx/{}" class="endorsement-onchain" rel="noopener" target="_blank">On-chain</a>"#,
+                            html_escape(hash)
+                        )
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
                 format!(
                     r#"<div class="endorsement-row">
           <div class="endorsement-info">
@@ -545,7 +588,7 @@ fn render_endorsements_section(count: u32, endorsements: &[EndorsementSummary]) 
             <span class="endorsement-proof">{}</span>
           </div>
           <div>
-            <span class="endorsement-status {status_class}">{status_label}</span>
+            <span class="endorsement-status {status_class}">{status_label}</span>{on_chain_tag}
             <span class="endorsement-time">{}</span>
           </div>
         </div>"#,

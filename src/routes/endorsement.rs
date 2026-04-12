@@ -143,12 +143,27 @@ pub async fn get_endorsements(
 
     let summaries: Vec<EndorsementSummary> = rows
         .into_iter()
-        .map(|r| EndorsementSummary {
-            id: r.id,
-            category: r.category,
-            proof_type: r.proof_type,
-            status: r.status,
-            created_at: r.created_at,
+        .map(|r| {
+            let (on_chain, tx_hash) = db
+                .get_attestation_for_endorsement(&r.id)
+                .ok()
+                .flatten()
+                .map_or((false, None), |att| {
+                    if att.tx_hash.is_some() {
+                        (true, att.tx_hash)
+                    } else {
+                        (false, None)
+                    }
+                });
+            EndorsementSummary {
+                id: r.id,
+                category: r.category,
+                proof_type: r.proof_type,
+                status: r.status,
+                created_at: r.created_at,
+                on_chain,
+                tx_hash,
+            }
         })
         .collect();
 
