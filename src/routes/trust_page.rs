@@ -215,13 +215,13 @@ fn render_html(
         .collect::<Vec<_>>()
         .join("\n        ");
 
-    let breakdown_html = render_breakdown(&score.breakdown);
+    let breakdown_html = render_breakdown(&score.breakdown, score.layer1_only);
     let endorsements_html = render_endorsements_section(endorsement_count, recent_endorsements);
 
     let layer_label = if score.layer1_only {
         r#"<span class="layer-badge">Public data only</span>"#
     } else {
-        r#"<span class="layer-badge layer-badge-zk">ZK-verified</span>"#
+        r#"<span class="layer-badge layer-badge-zk">Public + ZK data</span>"#
     };
 
     format!(
@@ -389,6 +389,33 @@ fn render_html(
       font-size: 13px;
       font-weight: 500;
       color: #1a1a2e;
+    }}
+    .breakdown-section-label {{
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #888;
+      margin-bottom: 8px;
+      margin-top: 16px;
+    }}
+    .breakdown-section-label:first-child {{
+      margin-top: 0;
+    }}
+    .breakdown-section-label--zk {{
+      color: #7c3aed;
+    }}
+    .breakdown-label--zk {{
+      color: #7c3aed;
+    }}
+    .breakdown-zk-tag {{
+      font-size: 9px;
+      background: rgba(124, 58, 237, 0.1);
+      color: #7c3aed;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 600;
+      margin-right: 4px;
     }}
     .endorsement-row {{
       display: flex;
@@ -587,15 +614,15 @@ fn render_endorsements_section(count: u32, endorsements: &[EndorsementSummary]) 
     )
 }
 
-fn render_breakdown(b: &ScoreBreakdown) -> String {
-    let items = [
+fn render_breakdown(b: &ScoreBreakdown, layer1_only: bool) -> String {
+    let l1_items = [
         ("Longevity", b.longevity, 15.0),
         ("Maintenance", b.maintenance, 10.0),
         ("Community", b.community, 10.0),
         ("Financial", b.financial, 5.0),
     ];
 
-    let html: String = items
+    let l1_html: String = l1_items
         .iter()
         .map(|(label, val, max)| {
             format!(
@@ -608,7 +635,42 @@ fn render_breakdown(b: &ScoreBreakdown) -> String {
         .collect::<Vec<_>>()
         .join("\n      ");
 
-    format!(r#"<div class="breakdown">{html}</div>"#)
+    if layer1_only {
+        return format!(
+            r#"<div class="breakdown-section-label">Public Signals</div>
+      <div class="breakdown">{l1_html}</div>"#
+        );
+    }
+
+    // Layer 2 items — only include non-zero fields (skip network_density when 0)
+    let mut l2_items: Vec<(&str, f64, f64)> = vec![
+        ("Endorsements", b.endorsements, 30.0),
+        ("Proof Strength", b.proof_strength, 15.0),
+        ("Tenure", b.tenure, 10.0),
+    ];
+    if b.network_density > 0.0 {
+        l2_items.push(("Network Density", b.network_density, 15.0));
+    }
+
+    let l2_html: String = l2_items
+        .iter()
+        .map(|(label, val, max)| {
+            format!(
+                r#"<div class="breakdown-item">
+          <span class="breakdown-label breakdown-label--zk"><span class="breakdown-zk-tag">ZK</span> {label}</span>
+          <span class="breakdown-value">{val:.1} / {max:.0}</span>
+        </div>"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n      ");
+
+    format!(
+        r#"<div class="breakdown-section-label">Public Signals</div>
+      <div class="breakdown">{l1_html}</div>
+      <div class="breakdown-section-label breakdown-section-label--zk">ZK Endorsement Signals</div>
+      <div class="breakdown">{l2_html}</div>"#
+    )
 }
 
 fn verification_label(v: &crate::models::VerificationLevel) -> &'static str {
