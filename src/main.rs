@@ -48,6 +48,38 @@ async fn main() {
         notary_public_key,
     };
 
+    // L2 attestation submission background task
+    if let Ok(private_key) = std::env::var("L2_PRIVATE_KEY") {
+        let contract_address = std::env::var("L2_CONTRACT_ADDRESS")
+            .unwrap_or_else(|_| "0x08AE2e7fd94130645725Afc69e9BE2140f2395d7".to_string());
+        let rpc_url = std::env::var("L2_RPC_URL")
+            .unwrap_or_else(|_| "https://sepolia.base.org".to_string());
+        let interval_secs: u64 = std::env::var("L2_BATCH_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(300);
+
+        match commit_backend::services::l2::L2Client::new(&rpc_url, &private_key, &contract_address)
+        {
+            Ok(l2_client) => {
+                let db_clone = state.db.clone();
+                tokio::spawn(commit_backend::services::l2::run_batch_submitter(
+                    db_clone,
+                    l2_client,
+                    interval_secs,
+                ));
+                tracing::info!(
+                    "L2 batch submitter started (interval: {interval_secs}s, contract: {contract_address})"
+                );
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialize L2 client: {e} — L2 submission disabled");
+            }
+        }
+    } else {
+        tracing::info!("L2_PRIVATE_KEY not set — L2 attestation submission disabled");
+    }
+
     let app = Router::new()
         .route("/trust-card", get(routes::trust_card::get_trust_card))
         .route(

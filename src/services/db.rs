@@ -22,6 +22,16 @@ pub struct Database {
 }
 
 #[derive(Debug)]
+pub struct AttestationRow {
+    pub id: String,
+    pub endorsement_id: String,
+    pub tx_hash: Option<String>,
+    pub chain: String,
+    pub block_number: Option<i64>,
+    pub attested_at: Option<String>,
+}
+
+#[derive(Debug)]
 pub struct EndorsementRow {
     pub id: String,
     pub subject_id: String,
@@ -81,7 +91,7 @@ impl Database {
                 id TEXT PRIMARY KEY,
                 endorsement_id TEXT NOT NULL,
                 tx_hash TEXT,
-                chain TEXT NOT NULL DEFAULT 'pending',
+                chain TEXT NOT NULL DEFAULT 'base_sepolia',
                 block_number INTEGER,
                 attested_at TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
@@ -158,6 +168,11 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS idx_endorsements_key_hash ON endorsements(endorser_key_hash);",
             )?;
         }
+
+        // Migration: normalize chain='pending' to 'base_sepolia'
+        self.conn.execute_batch(
+            "UPDATE attestations SET chain = 'base_sepolia' WHERE chain = 'pending';",
+        )?;
 
         Ok(())
     }
@@ -289,6 +304,57 @@ impl Database {
         Ok(())
     }
 
+    /// Mark an attestation as skipped (e.g. already attested on-chain).
+    /// Sets `chain = 'already_attested'` but leaves `tx_hash = NULL` so that
+    /// `get_attestation_for_endorsement` correctly reports `on_chain: false`
+    /// and `get_pending_attestations` (which filters `tx_hash IS NULL AND chain = 'base_sepolia'`)
+    /// excludes it from future batches.
+    pub fn mark_attestation_skipped(&self, id: &Uuid) -> Result<()> {
+        self.conn.execute(
+            "UPDATE attestations SET chain = 'already_attested' WHERE id = ?",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Batch-fetch attestations for multiple endorsement IDs in a single query.
+    /// Returns a map from endorsement_id to `AttestationRow`.
+    pub fn get_attestations_for_endorsements(
+        &self,
+        endorsement_ids: &[&str],
+    ) -> Result<std::collections::HashMap<String, AttestationRow>> {
+        if endorsement_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let placeholders: Vec<&str> = endorsement_ids.iter().map(|_| "?").collect();
+        let sql = format!(
+            "SELECT id, endorsement_id, tx_hash, chain, block_number, attested_at \
+             FROM attestations WHERE endorsement_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = endorsement_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(params.as_slice(), |row| {
+            Ok(AttestationRow {
+                id: row.get(0)?,
+                endorsement_id: row.get(1)?,
+                tx_hash: row.get(2)?,
+                chain: row.get(3)?,
+                block_number: row.get(4)?,
+                attested_at: row.get(5)?,
+            })
+        })?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            let att = row?;
+            map.insert(att.endorsement_id.clone(), att);
+        }
+        Ok(map)
+    }
+
     pub fn count_recent_endorsements(&self, subject_id: &Uuid, window_minutes: i64) -> Result<u32> {
         let count: u32 = self.conn.query_row(
             "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND created_at > datetime('now', '-' || ? || ' minutes')",
@@ -405,6 +471,55 @@ impl Database {
 
         let count: u32 = stmt.query_row(params_ref.as_slice(), |row| row.get(0))?;
         Ok(count)
+    }
+
+    /// Returns pending attestations (no tx_hash) joined with their endorsement proof_hash.
+    /// Limited to `limit` rows, ordered oldest first.
+    pub fn get_pending_attestations(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<crate::services::l2::PendingAttestation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT a.id, a.endorsement_id, e.proof_hash
+             FROM attestations a
+             JOIN endorsements e ON a.endorsement_id = e.id
+             WHERE a.tx_hash IS NULL AND a.chain = 'base_sepolia'
+             ORDER BY a.created_at ASC
+             LIMIT ?",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(crate::services::l2::PendingAttestation {
+                id: row.get(0)?,
+                endorsement_id: row.get(1)?,
+                endorsement_proof_hash: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn get_attestation_for_endorsement(
+        &self,
+        endorsement_id: &str,
+    ) -> Result<Option<AttestationRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, endorsement_id, tx_hash, chain, block_number, attested_at
+             FROM attestations WHERE endorsement_id = ?",
+        )?;
+        let result = stmt.query_row(params![endorsement_id], |row| {
+            Ok(AttestationRow {
+                id: row.get(0)?,
+                endorsement_id: row.get(1)?,
+                tx_hash: row.get(2)?,
+                chain: row.get(3)?,
+                block_number: row.get(4)?,
+                attested_at: row.get(5)?,
+            })
+        });
+        match result {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.

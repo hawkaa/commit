@@ -112,6 +112,12 @@ pub async fn submit_endorsement(
     let status = if signature_verified {
         db.update_endorsement_status(&endorsement_id, "verified")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        // Create attestation record for L2 submission (only for verified endorsements)
+        let attestation_id = Uuid::new_v4();
+        db.create_attestation(&attestation_id, &endorsement_id, "base_sepolia")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
         "verified"
     } else {
         "pending_attestation"
@@ -121,11 +127,6 @@ pub async fn submit_endorsement(
     if let Err(e) = db.invalidate_signal_cache(&subject.id) {
         tracing::warn!("Failed to invalidate signal cache for {}: {e}", subject.id);
     }
-
-    // Create a pending attestation record (will be submitted on-chain in Phase 2)
-    let attestation_id = Uuid::new_v4();
-    db.create_attestation(&attestation_id, &endorsement_id, "pending")
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(EndorsementResponse {
         id: endorsement_id.to_string(),
@@ -154,14 +155,32 @@ pub async fn get_endorsements(
         .get_endorsements_for_subject(&subject.id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let endorsement_ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    let attestation_map = db
+        .get_attestations_for_endorsements(&endorsement_ids)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let summaries: Vec<EndorsementSummary> = rows
         .into_iter()
-        .map(|r| EndorsementSummary {
-            id: r.id,
-            category: r.category,
-            proof_type: r.proof_type,
-            status: r.status,
-            created_at: r.created_at,
+        .map(|r| {
+            let (on_chain, tx_hash) = attestation_map
+                .get(&r.id)
+                .map_or((false, None), |att| {
+                    if att.tx_hash.is_some() {
+                        (true, att.tx_hash.clone())
+                    } else {
+                        (false, None)
+                    }
+                });
+            EndorsementSummary {
+                id: r.id,
+                category: r.category,
+                proof_type: r.proof_type,
+                status: r.status,
+                created_at: r.created_at,
+                on_chain,
+                tx_hash,
+            }
         })
         .collect();
 
