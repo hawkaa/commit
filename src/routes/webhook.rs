@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
 use crate::services::db::map_db_error;
-use crate::validation::validate_transcript_subject;
+use crate::validation::{validate_transcript_subject, verify_attestation_signature};
 
 /// Webhook payload from the TLSNotary verifier server.
 /// Sent after successful MPC-TLS verification of an endorsement proof.
@@ -17,10 +17,8 @@ pub struct VerifierWebhook {
     pub results: Vec<HandlerResult>,
     pub session: SessionInfo,
     pub transcript: RedactedTranscript,
-    /// Raw attestation from TLSNotary (hex-encoded). Optional for backward
-    /// compatibility with notary servers that don't yet send it.
-    /// TODO: require once own notary server is deployed.
-    pub attestation: Option<String>,
+    /// Raw attestation from TLSNotary (hex-encoded).
+    pub attestation: String,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -122,22 +120,23 @@ pub async fn receive_endorsement_webhook(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Compute proof_hash: prefer attestation, fall back to strengthened result hash
-    let (proof_hash, attestation_data) = if let Some(att_hex) = &payload.attestation {
-        if att_hex.len() > 1_000_000 {
-            return Err(StatusCode::PAYLOAD_TOO_LARGE);
-        }
-        let att_bytes = hex::decode(att_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
-        if att_bytes.is_empty() {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-        let hash = Sha256::digest(&att_bytes).to_vec();
-        (hash, Some(att_bytes))
-    } else {
-        // TODO: remove this fallback once own notary server sends attestation
-        let hash = hash_verification_results_with_transcript(&payload);
-        (hash, None)
-    };
+    // Decode attestation and compute proof_hash
+    if payload.attestation.len() > 1_000_000 {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    let attestation_bytes =
+        hex::decode(&payload.attestation).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if attestation_bytes.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Verify attestation signature when notary public key is configured
+    if let Some(ref key) = state.notary_public_key {
+        verify_attestation_signature(&attestation_bytes, key)?;
+    }
+
+    let proof_hash = Sha256::digest(&attestation_bytes).to_vec();
+    let attestation_data = Some(attestation_bytes);
 
     let db = state
         .db
@@ -203,18 +202,3 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         == 0
 }
 
-/// Hash verification results plus transcript to produce a deterministic proof hash.
-/// Includes transcript.sent to strengthen binding when attestation is not available.
-/// TODO: remove once own notary server sends attestation data.
-fn hash_verification_results_with_transcript(payload: &VerifierWebhook) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(payload.server_name.as_bytes());
-    hasher.update(payload.session.id.as_bytes());
-    hasher.update(payload.transcript.sent.as_bytes());
-    for result in &payload.results {
-        hasher.update(result.handler_type.as_bytes());
-        hasher.update(result.part.as_bytes());
-        hasher.update(result.value.as_bytes());
-    }
-    hasher.finalize().to_vec()
-}

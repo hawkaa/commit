@@ -207,7 +207,8 @@ fn webhook_payload(subject_kind: &str, subject_id: &str, proof_type: &str) -> se
         "transcript": {
             "sent": format!("GET /repos/{subject_id} HTTP/1.1\r\nHost: api.github.com\r\n"),
             "recv": "HTTP/1.1 200 OK\r\n"
-        }
+        },
+        "attestation": "deadbeef01020304"
     })
 }
 
@@ -259,7 +260,8 @@ async fn webhook_missing_subject_kind_returns_400() {
             "server_name": "api.github.com",
             "results": [],
             "session": { "id": "s1" },
-            "transcript": { "sent": "GET / HTTP/1.1\r\n", "recv": "" }
+            "transcript": { "sent": "GET / HTTP/1.1\r\n", "recv": "" },
+            "attestation": "deadbeef"
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
@@ -287,7 +289,8 @@ async fn webhook_invalid_server_name_returns_400() {
             "transcript": {
                 "sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: evil.com\r\n",
                 "recv": ""
-            }
+            },
+            "attestation": "deadbeef"
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
@@ -335,7 +338,8 @@ async fn webhook_email_proof_type_blocked() {
             "transcript": {
                 "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n",
                 "recv": ""
-            }
+            },
+            "attestation": "deadbeef"
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
@@ -365,7 +369,8 @@ async fn webhook_transcript_subject_mismatch_returns_400() {
             "transcript": {
                 "sent": "GET /repos/owner/repoA HTTP/1.1\r\nHost: api.github.com\r\n",
                 "recv": "HTTP/1.1 200 OK\r\n"
-            }
+            },
+            "attestation": "deadbeef"
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
@@ -476,8 +481,8 @@ async fn webhook_happy_path_with_attestation_uses_attestation_hash() {
 
 #[tokio::test]
 #[serial]
-async fn webhook_backward_compat_no_attestation() {
-    // Webhook without attestation field falls back to hash_verification_results_with_transcript
+async fn webhook_missing_attestation_returns_422() {
+    // Webhook without required attestation field is rejected at deserialization
     unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-compat") };
     let server = test_app();
     let (name, value) = auth_header("test-secret-compat");
@@ -500,9 +505,8 @@ async fn webhook_backward_compat_no_attestation() {
             }
         }))
         .await;
-    resp.assert_status_ok();
-    let body: serde_json::Value = resp.json();
-    assert_eq!(body["status"], "verified");
+    // axum rejects the request because the required `attestation` field is missing
+    resp.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
 }
 

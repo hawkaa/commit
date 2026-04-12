@@ -2,6 +2,23 @@
 
 All notable changes to Commit will be documented in this file.
 
+## [0.1.3.0] - 2026-04-12
+
+### Added
+- Server-side ECDSA-secp256k1 attestation signature verification using `tlsn-core`, `k256`, and `bcs`
+- `verify_attestation_signature()` function in `src/validation.rs` that deserializes TLSNotary attestations from BCS and verifies the notary's signature
+- Signature algorithm validation (rejects non-secp256k1 attestations)
+- Solution documentation for the verification approach (`docs/solutions/security-issues/`)
+
+### Changed
+- `AppState.notary_public_key` upgraded from raw PEM string to parsed `k256::ecdsa::VerifyingKey` (parsed once at startup)
+- Webhook `attestation` field is now required (was `Option<String>`)
+- `tlsn-core` dependency pinned by commit SHA instead of mutable git tag
+
+### Removed
+- `hash_verification_results_with_transcript` fallback function (webhook always requires attestation now)
+- Webhook backward-compatibility path for missing attestation data
+
 ## [0.1.2.0] - 2026-04-12
 
 ### Added
