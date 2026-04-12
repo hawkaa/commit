@@ -20,6 +20,14 @@ async fn main() {
 
     let github_token = std::env::var("GITHUB_TOKEN").ok();
     let db_path = std::env::var("DATABASE_PATH").unwrap_or_else(|_| "commit.db".to_string());
+    let notary_public_key = std::env::var("NOTARY_PUBLIC_KEY").ok();
+
+    if let Some(ref key) = notary_public_key {
+        let fingerprint: String = key.chars().filter(|c| c.is_alphanumeric()).take(16).collect();
+        tracing::info!("Notary public key loaded (fingerprint: {fingerprint}...)");
+    } else {
+        tracing::warn!("NOTARY_PUBLIC_KEY not set — attestation signature verification unavailable");
+    }
 
     let db = Database::open(&db_path).expect("Failed to open database");
     let github = GitHubClient::new(github_token);
@@ -27,6 +35,7 @@ async fn main() {
     let state = AppState {
         db: std::sync::Arc::new(Mutex::new(db)),
         github: std::sync::Arc::new(github),
+        notary_public_key,
     };
 
     let app = Router::new()
