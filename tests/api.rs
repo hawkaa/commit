@@ -934,3 +934,115 @@ async fn webhook_creates_attestation_row_with_base_sepolia_chain() {
 
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
 }
+
+// --- Pending attestation query tests ---
+
+#[tokio::test]
+#[serial]
+async fn pending_attestation_appears_in_get_pending_attestations() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-pending") };
+    let (server, state) = build_app();
+    let (name, value) = auth_header("test-secret-pending");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&webhook_payload(
+            "github",
+            "pending-org/pending-repo",
+            "git_history",
+        ))
+        .await;
+    resp.assert_status_ok();
+
+    // Verify the attestation appears in get_pending_attestations
+    let db = state.db.lock().unwrap();
+    let pending = db.get_pending_attestations(100).unwrap();
+    assert!(
+        !pending.is_empty(),
+        "should have at least one pending attestation"
+    );
+
+    let found = pending
+        .iter()
+        .any(|p| !p.endorsement_proof_hash.is_empty());
+    assert!(
+        found,
+        "pending attestation should have a non-empty proof hash"
+    );
+
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+async fn update_attestation_tx_removes_from_pending() {
+    let (_server, state) = build_app();
+
+    let db = state.db.lock().unwrap();
+
+    // Create a subject and endorsement manually
+    let subject = Subject {
+        id: Uuid::new_v4(),
+        kind: SubjectKind::GithubRepo,
+        identifier: "pending-remove-org/pending-remove-repo".to_string(),
+        display_name: "pending-remove-org/pending-remove-repo".to_string(),
+        endorsement_count: 0,
+    };
+    db.upsert_subject(&subject).unwrap();
+    let stored = db
+        .find_subject(
+            &SubjectKind::GithubRepo,
+            "pending-remove-org/pending-remove-repo",
+        )
+        .unwrap()
+        .unwrap();
+
+    let endorsement_id = Uuid::new_v4();
+    let proof_hash = [0xab_u8; 32];
+    db.create_endorsement(
+        &endorsement_id,
+        &stored.id,
+        "usage",
+        &proof_hash,
+        "git_history",
+        None,
+    )
+    .unwrap();
+    db.update_endorsement_status(&endorsement_id, "verified")
+        .unwrap();
+
+    let attestation_id = Uuid::new_v4();
+    db.create_attestation(&attestation_id, &endorsement_id, "base_sepolia")
+        .unwrap();
+
+    // Should appear in pending
+    let pending = db.get_pending_attestations(100).unwrap();
+    let found = pending
+        .iter()
+        .any(|p| p.endorsement_id == endorsement_id.to_string());
+    assert!(found, "attestation should be in pending list");
+
+    // Update with tx_hash — should no longer appear in pending
+    db.update_attestation_tx(&attestation_id, "0xdeadbeef", 12345)
+        .unwrap();
+
+    let pending_after = db.get_pending_attestations(100).unwrap();
+    let still_found = pending_after
+        .iter()
+        .any(|p| p.endorsement_id == endorsement_id.to_string());
+    assert!(
+        !still_found,
+        "attestation should not be in pending list after update"
+    );
+}
+
+#[tokio::test]
+async fn get_pending_attestations_returns_empty_when_none() {
+    let (_server, state) = build_app();
+    let db = state.db.lock().unwrap();
+    // Fresh in-memory DB should have no pending attestations
+    let pending = db.get_pending_attestations(100).unwrap();
+    assert!(
+        pending.is_empty(),
+        "should return empty when no pending attestations exist"
+    );
+}
