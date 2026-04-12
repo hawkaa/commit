@@ -45,6 +45,10 @@ fn build_app() -> (TestServer, AppState) {
             "/webhook/endorsement",
             post(commit_backend::routes::webhook::receive_endorsement_webhook),
         )
+        .route(
+            "/network-query",
+            post(commit_backend::routes::network::network_query),
+        )
         .with_state(state.clone());
     (TestServer::new(app), state)
 }
@@ -973,6 +977,235 @@ async fn endorsement_invalid_key_hash_returns_400() {
             "proof_type": "git_history",
             "transcript_sent": "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n",
             "endorser_key_hash": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+// --- Network query tests ---
+
+/// Helper: create a subject and endorsements with key hashes for network query tests.
+fn setup_network_test_data(state: &AppState) {
+    let db = state.db.lock().unwrap();
+    let subject = Subject {
+        id: Uuid::new_v4(),
+        kind: SubjectKind::GithubRepo,
+        identifier: "net-org/net-repo".to_string(),
+        display_name: "net-org/net-repo".to_string(),
+        endorsement_count: 0,
+    };
+    db.upsert_subject(&subject).unwrap();
+    let stored = db
+        .find_subject(&SubjectKind::GithubRepo, "net-org/net-repo")
+        .unwrap()
+        .unwrap();
+
+    let key_a = "a".repeat(64);
+    let key_b = "b".repeat(64);
+
+    // Endorsement from key_a
+    db.create_endorsement(
+        &Uuid::new_v4(),
+        &stored.id,
+        "usage",
+        &[1, 2, 3, 4],
+        "git_history",
+        None,
+        Some(&key_a),
+    )
+    .unwrap();
+
+    // Endorsement from key_b
+    db.create_endorsement(
+        &Uuid::new_v4(),
+        &stored.id,
+        "usage",
+        &[5, 6, 7, 8],
+        "git_history",
+        None,
+        Some(&key_b),
+    )
+    .unwrap();
+
+    // Endorsement with no key hash (legacy)
+    db.create_endorsement(
+        &Uuid::new_v4(),
+        &stored.id,
+        "usage",
+        &[9, 10, 11, 12],
+        "git_history",
+        None,
+        None,
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn network_query_matching_key_hashes() {
+    let (server, state) = build_app();
+    setup_network_test_data(&state);
+
+    let key_a = "a".repeat(64);
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "net-org/net-repo",
+            "key_hashes": [key_a]
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["network_endorsement_count"], 1);
+    assert_eq!(body["total_endorsement_count"], 3);
+}
+
+#[tokio::test]
+async fn network_query_multiple_matching_keys() {
+    let (server, state) = build_app();
+    setup_network_test_data(&state);
+
+    let key_a = "a".repeat(64);
+    let key_b = "b".repeat(64);
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "net-org/net-repo",
+            "key_hashes": [key_a, key_b]
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["network_endorsement_count"], 2);
+    assert_eq!(body["total_endorsement_count"], 3);
+}
+
+#[tokio::test]
+async fn network_query_no_matching_keys() {
+    let (server, state) = build_app();
+    setup_network_test_data(&state);
+
+    let key_c = "c".repeat(64);
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "net-org/net-repo",
+            "key_hashes": [key_c]
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["network_endorsement_count"], 0);
+    assert_eq!(body["total_endorsement_count"], 3);
+}
+
+#[tokio::test]
+async fn network_query_no_endorsements() {
+    let (server, state) = build_app();
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "empty-org/empty-repo".to_string(),
+            display_name: "empty-org/empty-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+    }
+
+    let key_a = "a".repeat(64);
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "empty-org/empty-repo",
+            "key_hashes": [key_a]
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["network_endorsement_count"], 0);
+    assert_eq!(body["total_endorsement_count"], 0);
+}
+
+#[tokio::test]
+async fn network_query_null_key_hash_not_matched() {
+    let (server, state) = build_app();
+    setup_network_test_data(&state);
+
+    // Query with a key hash that doesn't match any endorser, but legacy
+    // endorsements with NULL key_hash should NOT be counted
+    let key_d = "d".repeat(64);
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "net-org/net-repo",
+            "key_hashes": [key_d]
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["network_endorsement_count"], 0);
+}
+
+#[tokio::test]
+async fn network_query_empty_key_hashes_returns_400() {
+    let server = test_app();
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "owner/repo",
+            "key_hashes": []
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn network_query_too_many_key_hashes_returns_400() {
+    let server = test_app();
+    let hashes: Vec<String> = (0..201).map(|i| format!("{i:064x}")).collect();
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "owner/repo",
+            "key_hashes": hashes
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn network_query_invalid_hex_returns_400() {
+    let server = test_app();
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "github",
+            "id": "owner/repo",
+            "key_hashes": ["not-valid-hex"]
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn network_query_invalid_kind_returns_400() {
+    let server = test_app();
+    let key_a = "a".repeat(64);
+    let resp = server
+        .post("/network-query")
+        .json(&serde_json::json!({
+            "kind": "bogus",
+            "id": "owner/repo",
+            "key_hashes": [key_a]
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);

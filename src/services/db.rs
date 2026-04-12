@@ -353,6 +353,38 @@ impl Database {
         rows.collect()
     }
 
+    /// Count endorsements for a subject from endorsers matching any of the provided key hashes.
+    /// Only counts non-failed endorsements with a non-NULL `endorser_key_hash`.
+    pub fn count_network_endorsements(
+        &self,
+        subject_id: &Uuid,
+        key_hashes: &[String],
+    ) -> Result<u32> {
+        if key_hashes.is_empty() {
+            return Ok(0);
+        }
+        let placeholders: Vec<&str> = key_hashes.iter().map(|_| "?").collect();
+        let sql = format!(
+            "SELECT COUNT(*) FROM endorsements \
+             WHERE subject_id = ? AND status != 'failed' \
+             AND endorser_key_hash IN ({})",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+
+        // Bind subject_id first, then each key hash
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        param_values.push(Box::new(subject_id.to_string()));
+        for kh in key_hashes {
+            param_values.push(Box::new(kh.clone()));
+        }
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
+        let count: u32 = stmt.query_row(params_ref.as_slice(), |row| row.get(0))?;
+        Ok(count)
+    }
+
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.
     /// Returns `None` if missing or stale (older than `CACHE_TTL_SECS`).
     pub fn get_cached_signals(&self, subject_id: &Uuid) -> Result<Option<(String, String)>> {
