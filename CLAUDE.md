@@ -57,26 +57,26 @@ Do not deviate without explicit user approval.
 - [x] L2 contract deployment (Base Sepolia: `0x08AE2e7fd94130645725Afc69e9BE2140f2395d7`)
 
 ### Infrastructure
-- [ ] GitHub Actions CI/CD: auto-deploy backend + verifier to Fly.io on push to main (test-gated)
+- [x] GitHub Actions CI/CD: auto-deploy backend + verifier to Fly.io on push to main (test-gated)
 
 ### Phase 2 — TLSNotary + Endorsements (weeks 3-6)
 - [x] TLSNotary research spike (MPC-TLS, ~5s proving time benchmarked)
 - [x] Extension offscreen WASM integration (tlsn-wasm, offscreen.html/js)
 - [x] Backend webhook endpoint (POST /webhook/endorsement)
 - [x] Own Notary server (Docker image + Fly.io, using public notary.pse.dev for PoC) — see `docs/plans/2026-04-12-001-feat-own-notary-server-plan.md`
-- [ ] ZK-verified endorsement flow end-to-end
+- [x] ZK-verified endorsement flow end-to-end — see `docs/plans/2026-04-12-004-feat-e2e-endorsement-flow-plan.md`
 - [x] P0: Bind proof_hash to cryptographic attestation (currently hashes attacker-controlled payload fields) — see `docs/plans/2026-04-11-001-fix-proof-binding-security-plan.md`
 - [x] P0: Bind session.data subject to proof transcript (proof for repo A can currently endorse repo B) — see same plan
-- [ ] Follow-up from P0 plan: email proof type transcript binding
-- [ ] Follow-up from P0 plan: ci_logs proof type transcript binding
+- [x] Follow-up from P0 plan: email proof type transcript binding — see `docs/plans/2026-04-12-005-fix-security-hardening-batch-plan.md`
+- [x] Follow-up from P0 plan: ci_logs proof type transcript binding — see same plan
 - [x] Follow-up from P0 plan: full attestation signature verification (requires own notary server)
-- [ ] Follow-up from P0 plan: attestation nonce-based replay prevention / rate limiting
+- [x] Follow-up from P0 plan: attestation nonce-based replay prevention / rate limiting — see same plan
 - [x] Follow-up from P0 plan: deprecate webhook hash_verification_results fallback
-- [ ] Follow-up from P0 plan: score integrity without device binding (weight pending_attestation lower, or require Ed25519 signing)
-- [ ] Follow-up from P0 plan: validate single HTTP request line in revealed transcript (pipelining defense)
-- [ ] Network keyring + key sharing
-- [ ] L2 attestation for endorsements
-- [ ] Commit Score v2 (Layer 1 + Layer 2)
+- [x] Follow-up from P0 plan: score integrity without device binding (weight pending_attestation lower) — see same plan
+- [x] Follow-up from P0 plan: validate single HTTP request line in revealed transcript (pipelining defense) — see same plan
+- [ ] Network keyring + key sharing — see `docs/plans/2026-04-12-006-feat-network-keyring-key-sharing-plan.md`
+- [ ] L2 attestation for endorsements — see `docs/plans/2026-04-12-007-feat-l2-attestation-submission-plan.md`
+- [ ] Commit Score v2 (Layer 1 + Layer 2) — see `docs/plans/2026-04-12-008-feat-commit-score-v2-plan.md`
 
 ### Phase 3 — Network + Launch (weeks 6-9)
 - [ ] "N in your network endorse this" display
