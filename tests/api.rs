@@ -5,11 +5,13 @@ use axum::{
 use axum_test::TestServer;
 use commit_backend::{
     AppState,
+    models::{Subject, SubjectKind},
     services::{db::Database, github::GitHubClient},
 };
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
-fn test_app() -> TestServer {
+fn build_app() -> (TestServer, AppState) {
     let db = Database::open(":memory:").expect("in-memory db");
     let github = GitHubClient::new(None);
     let state = AppState {
@@ -43,8 +45,12 @@ fn test_app() -> TestServer {
             "/webhook/endorsement",
             post(commit_backend::routes::webhook::receive_endorsement_webhook),
         )
-        .with_state(state);
-    TestServer::new(app)
+        .with_state(state.clone());
+    (TestServer::new(app), state)
+}
+
+fn test_app() -> TestServer {
+    build_app().0
 }
 
 #[tokio::test]
@@ -553,4 +559,76 @@ async fn webhook_duplicate_attestation_returns_409() {
     resp2.assert_status(axum::http::StatusCode::CONFLICT);
 
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+// --- E2E integration test: endorsement appears in trust card ---
+
+#[tokio::test]
+async fn endorsement_appears_in_trust_card_response() {
+    let (server, state) = build_app();
+
+    // Seed a subject with cached signals so the trust card endpoint doesn't
+    // need to call the GitHub API.
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "e2e-org/e2e-repo".to_string(),
+            display_name: "e2e-org/e2e-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+        // Read back to get the canonical ID
+        let stored = db
+            .find_subject(&SubjectKind::GithubRepo, "e2e-org/e2e-repo")
+            .unwrap()
+            .unwrap();
+        db.cache_signals(
+            &stored.id,
+            r#"[{"source":"registry","category":"longevity","label":"Age","value":"3yr","verification":"public_api","timestamp":"2023-01-01","confidence":0.9}]"#,
+            r#"{"score":55,"breakdown":{"longevity":9.0,"maintenance":6.0,"community":5.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+        )
+        .unwrap();
+    }
+
+    // Create an endorsement via POST /endorsements
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "e2e-org/e2e-repo",
+            "category": "usage",
+            "attestation": "deadbeefcafe0123456789abcdef0123",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/e2e-org/e2e-repo HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    resp.assert_status_ok();
+    let endorsement: serde_json::Value = resp.json();
+    assert!(endorsement["id"].as_str().is_some());
+    // No notary key configured -> pending_attestation
+    assert_eq!(endorsement["status"], "pending_attestation");
+
+    // Verify endorsement appears in trust card response
+    let trust_resp = server
+        .get("/trust-card?kind=github&id=e2e-org/e2e-repo")
+        .await;
+    trust_resp.assert_status_ok();
+    let trust_card: serde_json::Value = trust_resp.json();
+    assert!(
+        trust_card["endorsement_count"].as_u64().unwrap() > 0,
+        "endorsement_count should be > 0 after creating an endorsement"
+    );
+    assert!(
+        !trust_card["recent_endorsements"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "recent_endorsements should not be empty"
+    );
+    assert_eq!(
+        trust_card["recent_endorsements"][0]["category"], "usage",
+        "endorsement category should match"
+    );
 }
