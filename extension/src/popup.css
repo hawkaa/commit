@@ -1,0 +1,155 @@
+/* Commit popup — matches DESIGN.md aesthetic */
+
+body {
+  margin: 0;
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f5f5f0;
+  color: #1a1a2e;
+  font-size: 13px;
+  width: 320px;
+}
+
+.popup-container {
+  padding: 16px;
+}
+
+.popup-title {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0 0 16px 0;
+  letter-spacing: -0.02em;
+}
+
+.popup-section {
+  margin-bottom: 16px;
+}
+
+.popup-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #888888;
+  margin: 0 0 8px 0;
+}
+
+.key-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e5e0;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.key-value {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  word-break: break-all;
+  color: #666666;
+  cursor: pointer;
+}
+
+.key-value.expanded {
+  color: #1a1a2e;
+}
+
+.popup-btn {
+  background: #1a1a2e;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.popup-btn:hover {
+  opacity: 0.9;
+}
+
+.popup-btn--small {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.popup-btn--danger {
+  background: transparent;
+  color: #dc2626;
+  border: 1px solid #dc2626;
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+.popup-btn--danger:hover {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.keyring-list {
+  margin-bottom: 8px;
+}
+
+.keyring-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #ffffff;
+  border: 1px solid #e5e5e0;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+.keyring-label {
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.keyring-key {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #888888;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keyring-empty {
+  color: #888888;
+  font-size: 12px;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.keyring-add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.popup-input {
+  background: #ffffff;
+  border: 1px solid #e5e5e0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #1a1a2e;
+  outline: none;
+}
+
+.popup-input:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+.popup-input::placeholder {
+  color: #888888;
+}

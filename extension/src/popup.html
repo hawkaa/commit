@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Commit</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup-container">
+    <h1 class="popup-title">Commit</h1>
+
+    <section class="popup-section">
+      <h2 class="popup-section-title">YOUR KEY</h2>
+      <div class="key-display">
+        <code id="public-key" class="key-value">Loading...</code>
+        <button id="copy-key" class="popup-btn popup-btn--small" title="Copy full public key">Copy</button>
+      </div>
+    </section>
+
+    <section class="popup-section">
+      <h2 class="popup-section-title">YOUR NETWORK</h2>
+      <div id="keyring-list" class="keyring-list"></div>
+      <div class="keyring-add">
+        <input id="add-key-input" type="text" class="popup-input" placeholder="Paste public key (64 hex chars)" maxlength="64" />
+        <input id="add-label-input" type="text" class="popup-input" placeholder="Label (e.g. Alice)" maxlength="32" />
+        <button id="add-key-btn" class="popup-btn">Add to network</button>
+      </div>
+    </section>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

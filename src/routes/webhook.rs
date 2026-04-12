@@ -188,6 +188,7 @@ pub async fn receive_endorsement_webhook(
         &proof_hash,
         proof_type.as_str(),
         attestation_data.as_deref(),
+        None, // endorser_key_hash: webhooks are server-to-server, no key hash
     )
     .map_err(map_db_error)?;
 

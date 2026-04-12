@@ -65,6 +65,10 @@ async fn main() {
             "/webhook/endorsement",
             post(routes::webhook::receive_endorsement_webhook),
         )
+        .route(
+            "/network-query",
+            post(routes::network::network_query),
+        )
         .layer(CorsLayer::permissive())
         .with_state(state);
 
