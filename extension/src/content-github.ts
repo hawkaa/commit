@@ -2,12 +2,22 @@
 // Injects trust cards on github.com repo pages
 import { API_BASE, CACHE_TTL_MS } from "./config";
 
+interface EndorsementSummary {
+  id: string;
+  category: string;
+  proof_type: string;
+  status: string;
+  created_at: string;
+}
+
 interface TrustCardData {
   subject: { identifier: string; display_name: string };
   score: {
     score: number | null;
     breakdown: { longevity: number; community: number; maintenance: number };
   };
+  endorsement_count: number;
+  recent_endorsements: EndorsementSummary[];
 }
 
 async function injectTrustCard(): Promise<void> {
@@ -96,6 +106,13 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
   details.appendChild(label);
   details.appendChild(signals);
 
+  if (data.endorsement_count > 0) {
+    const network = document.createElement("div");
+    network.className = "commit-card-network";
+    network.textContent = `${data.endorsement_count} ZK endorsement${data.endorsement_count === 1 ? "" : "s"}`;
+    details.appendChild(network);
+  }
+
   const endorseBtn = document.createElement("button");
   endorseBtn.className = "commit-endorse-btn";
   endorseBtn.textContent = "Endorse";
@@ -130,13 +147,59 @@ async function startEndorsement(
       btn.textContent = "Endorsed";
       btn.classList.remove("commit-endorse-btn--active");
       btn.classList.add("commit-endorse-btn--done");
+
+      // Optimistically increment displayed count
+      const card = btn.closest(".commit-trust-card");
+      if (card) {
+        let networkEl = card.querySelector(".commit-card-network");
+        if (networkEl) {
+          const match = networkEl.textContent?.match(/^(\d+)/);
+          const current = match ? parseInt(match[1], 10) : 0;
+          const next = current + 1;
+          networkEl.textContent = `${next} ZK endorsement${next === 1 ? "" : "s"}`;
+        } else {
+          networkEl = document.createElement("div");
+          networkEl.className = "commit-card-network";
+          networkEl.textContent = "1 ZK endorsement";
+          card.querySelector(".commit-card-details")?.appendChild(networkEl);
+        }
+      }
+
+      // Clear trust card cache for this repo
+      const cacheKey = `trust-card:github:${repoId}`;
+      await chrome.storage.local.remove(cacheKey);
+
+      // Reset button after 3s to allow re-endorsement
+      setTimeout(() => {
+        btn.textContent = "Endorse";
+        btn.classList.remove("commit-endorse-btn--done");
+        btn.disabled = false;
+      }, 3000);
     } else {
       console.error("[commit] Endorsement failed:", result.error);
-      resetEndorseButton(btn, "Failed");
+      const label = errorCodeToLabel(result.errorCode);
+      resetEndorseButton(btn, label);
     }
   } catch (err) {
     console.error("[commit] Endorsement error:", err);
-    resetEndorseButton(btn, "Error");
+    resetEndorseButton(btn, "Offline");
+  }
+}
+
+function errorCodeToLabel(code?: string): string {
+  switch (code) {
+    case "notary_offline":
+      return "Notary offline";
+    case "timeout":
+      return "Timed out";
+    case "duplicate":
+      return "Already endorsed";
+    case "network":
+      return "Offline";
+    case "backend_error":
+    case "prove_failed":
+    default:
+      return "Failed";
   }
 }
 

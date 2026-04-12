@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::models::{CommitScore, CommitmentSignal, ScoreBreakdown, Subject, SubjectKind};
+use crate::models::{CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind};
+use crate::services::db::EndorsementRow;
 use crate::services::score::{build_signals, score_github_repo, score_github_repo_with_endorsements};
 
 #[derive(Deserialize)]
@@ -21,6 +22,20 @@ pub struct TrustCardResponse {
     pub subject: Subject,
     pub signals: Vec<CommitmentSignal>,
     pub score: CommitScore,
+    pub endorsement_count: u32,
+    pub recent_endorsements: Vec<EndorsementSummary>,
+}
+
+fn map_endorsement_rows(rows: Vec<EndorsementRow>) -> Vec<EndorsementSummary> {
+    rows.into_iter()
+        .map(|r| EndorsementSummary {
+            id: r.id,
+            category: r.category,
+            proof_type: r.proof_type,
+            status: r.status,
+            created_at: r.created_at,
+        })
+        .collect()
 }
 
 #[allow(clippy::missing_errors_doc)] // Axum handler
@@ -62,10 +77,16 @@ async fn get_github_trust_card(
                 breakdown: ScoreBreakdown::default(),
                 layer1_only: true,
             });
+            let endorsement_count = db.get_endorsement_count(&subject.id).unwrap_or(0);
+            let recent_endorsements = map_endorsement_rows(
+                db.get_recent_endorsements(&subject.id, 5).unwrap_or_default(),
+            );
             return Ok(Json(TrustCardResponse {
                 subject,
                 signals,
                 score,
+                endorsement_count,
+                recent_endorsements,
             }));
         }
     }
@@ -123,10 +144,16 @@ async fn get_github_trust_card(
         &serde_json::to_string(&signals).unwrap_or_default(),
         &serde_json::to_string(&score).unwrap_or_default(),
     );
+    let endorsement_count = db.get_endorsement_count(&subject.id).unwrap_or(0);
+    let recent_endorsements = map_endorsement_rows(
+        db.get_recent_endorsements(&subject.id, 5).unwrap_or_default(),
+    );
 
     Ok(Json(TrustCardResponse {
         subject,
         signals,
         score,
+        endorsement_count,
+        recent_endorsements,
     }))
 }

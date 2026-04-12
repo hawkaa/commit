@@ -5,11 +5,13 @@ use axum::{
 use axum_test::TestServer;
 use commit_backend::{
     AppState,
+    models::{Subject, SubjectKind},
     services::{db::Database, github::GitHubClient},
 };
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
-fn test_app() -> TestServer {
+fn build_app() -> (TestServer, AppState) {
     let db = Database::open(":memory:").expect("in-memory db");
     let github = GitHubClient::new(None);
     let state = AppState {
@@ -43,8 +45,12 @@ fn test_app() -> TestServer {
             "/webhook/endorsement",
             post(commit_backend::routes::webhook::receive_endorsement_webhook),
         )
-        .with_state(state);
-    TestServer::new(app)
+        .with_state(state.clone());
+    (TestServer::new(app), state)
+}
+
+fn test_app() -> TestServer {
+    build_app().0
 }
 
 #[tokio::test]
@@ -665,7 +671,6 @@ async fn webhook_ci_logs_missing_actions_returns_400() {
     unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-ci2") };
     let server = test_app();
     let (name, value) = auth_header("test-secret-ci2");
-    // Use a git_history-style transcript (no /actions/) but claim ci_logs proof type
     let resp = server
         .post("/webhook/endorsement")
         .add_header(name, value)
@@ -703,7 +708,6 @@ async fn endorsement_post_ci_logs_happy_path() {
             "transcript_sent": "GET /repos/ci-org/ci-repo/actions/runs HTTP/1.1\r\nHost: api.github.com\r\n"
         }))
         .await;
-    // Subject doesn't exist yet -> 404 (but transcript validation passed)
     resp.assert_status(axum::http::StatusCode::NOT_FOUND);
 }
 
@@ -732,7 +736,6 @@ async fn webhook_rate_limit_triggers_after_5_endorsements() {
     unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-rate") };
     let server = test_app();
 
-    // Submit 5 endorsements with unique attestations (different proof_hash each time)
     for i in 0..5 {
         let (name, value) = auth_header("test-secret-rate");
         let resp = server
@@ -757,7 +760,6 @@ async fn webhook_rate_limit_triggers_after_5_endorsements() {
         resp.assert_status_ok();
     }
 
-    // 6th submission should be rate-limited
     let (name, value) = auth_header("test-secret-rate");
     let resp = server
         .post("/webhook/endorsement")
@@ -781,4 +783,70 @@ async fn webhook_rate_limit_triggers_after_5_endorsements() {
     resp.assert_status(axum::http::StatusCode::TOO_MANY_REQUESTS);
 
     unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+// --- E2E integration test: endorsement appears in trust card ---
+
+#[tokio::test]
+async fn endorsement_appears_in_trust_card_response() {
+    let (server, state) = build_app();
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "e2e-org/e2e-repo".to_string(),
+            display_name: "e2e-org/e2e-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+        let stored = db
+            .find_subject(&SubjectKind::GithubRepo, "e2e-org/e2e-repo")
+            .unwrap()
+            .unwrap();
+        db.cache_signals(
+            &stored.id,
+            r#"[{"source":"registry","category":"longevity","label":"Age","value":"3yr","verification":"public_api","timestamp":"2023-01-01","confidence":0.9}]"#,
+            r#"{"score":55,"breakdown":{"longevity":9.0,"maintenance":6.0,"community":5.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+        )
+        .unwrap();
+    }
+
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "e2e-org/e2e-repo",
+            "category": "usage",
+            "attestation": "deadbeefcafe0123456789abcdef0123",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/e2e-org/e2e-repo HTTP/1.1\r\nHost: api.github.com\r\n"
+        }))
+        .await;
+    resp.assert_status_ok();
+    let endorsement: serde_json::Value = resp.json();
+    assert!(endorsement["id"].as_str().is_some());
+    assert_eq!(endorsement["status"], "pending_attestation");
+
+    let trust_resp = server
+        .get("/trust-card?kind=github&id=e2e-org/e2e-repo")
+        .await;
+    trust_resp.assert_status_ok();
+    let trust_card: serde_json::Value = trust_resp.json();
+    assert!(
+        trust_card["endorsement_count"].as_u64().unwrap() > 0,
+        "endorsement_count should be > 0 after creating an endorsement"
+    );
+    assert!(
+        !trust_card["recent_endorsements"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "recent_endorsements should not be empty"
+    );
+    assert_eq!(
+        trust_card["recent_endorsements"][0]["category"], "usage",
+        "endorsement category should match"
+    );
 }
