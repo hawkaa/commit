@@ -44,9 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-action@1.5
-        with:
-          args: deploy --app commit-backend
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - run: flyctl deploy --app commit-backend
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -58,8 +58,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-action@1.5
-        with:
-          args: deploy --config verifier/fly.toml --app commit-verifier
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - run: flyctl deploy --config verifier/fly.toml --app commit-verifier
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
