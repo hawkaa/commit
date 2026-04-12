@@ -1028,6 +1028,7 @@ async fn update_attestation_tx_removes_from_pending() {
         &proof_hash,
         "git_history",
         None,
+        None, // endorser_key_hash
     )
     .unwrap();
     db.update_endorsement_status(&endorsement_id, "verified")
@@ -1112,6 +1113,21 @@ async fn trust_card_endorsement_shows_on_chain_false_when_no_attestation() {
         .await;
     resp.assert_status_ok();
 
+    // Re-seed cache after endorsement (cache was invalidated by endorsement creation)
+    {
+        let db = state.db.lock().unwrap();
+        let stored = db
+            .find_subject(&SubjectKind::GithubRepo, "onchain-org/onchain-repo")
+            .unwrap()
+            .unwrap();
+        db.cache_signals(
+            &stored.id,
+            r#"[{"source":"registry","category":"longevity","label":"Age","value":"1yr","verification":"public_api","timestamp":"2024-01-01","confidence":0.9}]"#,
+            r#"{"score":50,"breakdown":{"longevity":8.0,"maintenance":5.0,"community":4.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+        )
+        .unwrap();
+    }
+
     let trust_resp = server
         .get("/trust-card?kind=github&id=onchain-org/onchain-repo")
         .await;
@@ -1160,6 +1176,7 @@ async fn trust_card_endorsement_shows_on_chain_true_when_attested() {
             &proof_hash,
             "git_history",
             None,
+            None, // endorser_key_hash
         )
         .unwrap();
         db.update_endorsement_status(&endorsement_id, "verified")
@@ -1214,6 +1231,7 @@ async fn endorsement_with_pending_attestation_shows_on_chain_false() {
         &proof_hash,
         "git_history",
         None,
+        None, // endorser_key_hash
     )
     .unwrap();
     db.update_endorsement_status(&endorsement_id, "verified")
