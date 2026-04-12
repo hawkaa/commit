@@ -284,6 +284,29 @@ impl Database {
         Ok(count)
     }
 
+    pub fn get_recent_endorsements(
+        &self,
+        subject_id: &Uuid,
+        limit: u32,
+    ) -> Result<Vec<EndorsementRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at
+             FROM endorsements WHERE subject_id = ? ORDER BY created_at DESC LIMIT ?",
+        )?;
+        let rows = stmt.query_map(params![subject_id.to_string(), limit], |row| {
+            Ok(EndorsementRow {
+                id: row.get(0)?,
+                subject_id: row.get(1)?,
+                category: row.get(2)?,
+                proof_hash: row.get(3)?,
+                proof_type: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.
     /// Returns `None` if missing or stale (older than `CACHE_TTL_SECS`).
     pub fn get_cached_signals(&self, subject_id: &Uuid) -> Result<Option<(String, String)>> {
