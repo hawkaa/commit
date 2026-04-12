@@ -348,6 +348,30 @@ impl Database {
         rows.collect()
     }
 
+    /// Returns pending attestations (no tx_hash) joined with their endorsement proof_hash.
+    /// Limited to `limit` rows, ordered oldest first.
+    pub fn get_pending_attestations(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<crate::services::l2::PendingAttestation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT a.id, a.endorsement_id, e.proof_hash
+             FROM attestations a
+             JOIN endorsements e ON a.endorsement_id = e.id
+             WHERE a.tx_hash IS NULL AND a.chain = 'base_sepolia'
+             ORDER BY a.created_at ASC
+             LIMIT ?",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(crate::services::l2::PendingAttestation {
+                id: row.get(0)?,
+                endorsement_id: row.get(1)?,
+                endorsement_proof_hash: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn get_attestation_for_endorsement(
         &self,
         endorsement_id: &str,
