@@ -16,6 +16,7 @@ pub struct SubmitEndorsementRequest {
     pub attestation: String,
     pub proof_type: String,
     pub transcript_sent: String,
+    pub transcript_recv: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -34,7 +35,12 @@ pub async fn submit_endorsement(
     let proof_type = ProofType::parse(&req.proof_type).ok_or(StatusCode::BAD_REQUEST)?;
 
     // Validate transcript matches claimed subject
-    validate_transcript_subject(&req.transcript_sent, &proof_type, &req.subject_id)?;
+    validate_transcript_subject(
+        &req.transcript_sent,
+        req.transcript_recv.as_deref(),
+        &proof_type,
+        &req.subject_id,
+    )?;
 
     // Decode attestation and compute proof_hash server-side
     // Limit attestation size to prevent memory exhaustion (500KB decoded max)

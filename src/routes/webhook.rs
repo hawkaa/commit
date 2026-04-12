@@ -103,7 +103,12 @@ pub async fn receive_endorsement_webhook(
     let kind = SubjectKind::parse(subject_kind_str).ok_or(StatusCode::BAD_REQUEST)?;
 
     // Validate transcript matches claimed subject (unconditional — always required)
-    validate_transcript_subject(&payload.transcript.sent, &proof_type, subject_id_str)?;
+    validate_transcript_subject(
+        &payload.transcript.sent,
+        payload.transcript.recv.as_deref(),
+        &proof_type,
+        subject_id_str,
+    )?;
 
     // Validate the server_name matches expected target for proof type
     let valid_server = match proof_type_str {

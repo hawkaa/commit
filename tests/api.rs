@@ -323,8 +323,7 @@ async fn webhook_happy_path_creates_endorsement() {
 
 #[tokio::test]
 #[serial]
-async fn webhook_email_proof_type_blocked() {
-    // Email proof type is blocked until transcript binding is designed
+async fn webhook_email_proof_type_happy_path() {
     unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5") };
     let server = test_app();
     let (name, value) = auth_header("test-secret-5");
@@ -343,7 +342,68 @@ async fn webhook_email_proof_type_blocked() {
             },
             "transcript": {
                 "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n",
-                "recv": ""
+                "recv": "HTTP/1.1 200 OK\r\n\r\nCheck https://github.com/email-org/email-repo/issues/1"
+            },
+            "attestation": "deadbeef"
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["status"], "verified");
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_email_no_matching_recv_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5b") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-5b");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "mail.google.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "email-proof"}],
+            "session": {
+                "id": "email-session-bad",
+                "subject_kind": "github",
+                "subject_id": "email-org/email-repo",
+                "category": "usage",
+                "proof_type": "email"
+            },
+            "transcript": {
+                "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n\r\nNo repo URL here"
+            },
+            "attestation": "deadbeef"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}
+
+#[tokio::test]
+#[serial]
+async fn webhook_email_missing_recv_returns_400() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-5c") };
+    let server = test_app();
+    let (name, value) = auth_header("test-secret-5c");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "mail.google.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "email-proof"}],
+            "session": {
+                "id": "email-session-no-recv",
+                "subject_kind": "github",
+                "subject_id": "email-org/email-repo",
+                "category": "usage",
+                "proof_type": "email"
+            },
+            "transcript": {
+                "sent": "GET / HTTP/1.1\r\nHost: mail.google.com\r\n"
             },
             "attestation": "deadbeef"
         }))
@@ -435,7 +495,7 @@ async fn endorsement_post_empty_attestation_returns_400() {
 }
 
 #[tokio::test]
-async fn endorsement_post_email_proof_type_blocked() {
+async fn endorsement_post_email_missing_recv_returns_400() {
     let server = test_app();
     let resp = server
         .post("/endorsements")
@@ -449,6 +509,25 @@ async fn endorsement_post_email_proof_type_blocked() {
         }))
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn endorsement_post_email_with_recv_validates() {
+    let server = test_app();
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "owner/repo",
+            "category": "usage",
+            "attestation": "abcd1234",
+            "proof_type": "email",
+            "transcript_sent": "GET / HTTP/1.1\r\n",
+            "transcript_recv": "HTTP/1.1 200 OK\r\n\r\nhttps://github.com/owner/repo"
+        }))
+        .await;
+    // Subject doesn't exist -> 404 (but transcript validation passed)
+    resp.assert_status(axum::http::StatusCode::NOT_FOUND);
 }
 
 // --- Endorsement happy path + replay prevention tests ---
