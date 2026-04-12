@@ -8,6 +8,9 @@ use crate::models::{EndorsementCategory, ProofType, SubjectKind};
 use crate::services::db::map_db_error;
 use crate::validation::{validate_transcript_subject, verify_attestation_signature};
 
+const RATE_LIMIT_WINDOW_MINUTES: i64 = 60;
+const RATE_LIMIT_MAX_ENDORSEMENTS: u32 = 5;
+
 #[derive(Deserialize)]
 pub struct SubmitEndorsementRequest {
     pub subject_kind: String,
@@ -70,6 +73,20 @@ pub async fn submit_endorsement(
         .find_subject(&kind, &req.subject_id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Rate limit: max endorsements per subject within a time window
+    let recent_count = db
+        .count_recent_endorsements(&subject.id, RATE_LIMIT_WINDOW_MINUTES)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if recent_count >= RATE_LIMIT_MAX_ENDORSEMENTS {
+        tracing::warn!(
+            "Rate limit exceeded for subject {}: {} endorsements in last {} minutes",
+            subject.id,
+            recent_count,
+            RATE_LIMIT_WINDOW_MINUTES
+        );
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
 
     let endorsement_id = Uuid::new_v4();
     db.create_endorsement(

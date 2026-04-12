@@ -723,3 +723,62 @@ async fn endorsement_post_ci_logs_missing_actions_returns_400() {
         .await;
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
 }
+
+// --- Rate limiting tests ---
+
+#[tokio::test]
+#[serial]
+async fn webhook_rate_limit_triggers_after_5_endorsements() {
+    unsafe { std::env::set_var("VERIFIER_WEBHOOK_SECRET", "test-secret-rate") };
+    let server = test_app();
+
+    // Submit 5 endorsements with unique attestations (different proof_hash each time)
+    for i in 0..5 {
+        let (name, value) = auth_header("test-secret-rate");
+        let resp = server
+            .post("/webhook/endorsement")
+            .add_header(name, value)
+            .json(&serde_json::json!({
+                "server_name": "api.github.com",
+                "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+                "session": {
+                    "id": format!("rate-session-{i}"),
+                    "subject_kind": "github",
+                    "subject_id": "rate-org/rate-repo",
+                    "proof_type": "git_history"
+                },
+                "transcript": {
+                    "sent": "GET /repos/rate-org/rate-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+                    "recv": "HTTP/1.1 200 OK\r\n"
+                },
+                "attestation": format!("deadbeef{i:08x}{i:08x}")
+            }))
+            .await;
+        resp.assert_status_ok();
+    }
+
+    // 6th submission should be rate-limited
+    let (name, value) = auth_header("test-secret-rate");
+    let resp = server
+        .post("/webhook/endorsement")
+        .add_header(name, value)
+        .json(&serde_json::json!({
+            "server_name": "api.github.com",
+            "results": [{"type": "RECV", "part": "BODY", "value": "test"}],
+            "session": {
+                "id": "rate-session-6",
+                "subject_kind": "github",
+                "subject_id": "rate-org/rate-repo",
+                "proof_type": "git_history"
+            },
+            "transcript": {
+                "sent": "GET /repos/rate-org/rate-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+                "recv": "HTTP/1.1 200 OK\r\n"
+            },
+            "attestation": "deadbeef99999999"
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::TOO_MANY_REQUESTS);
+
+    unsafe { std::env::remove_var("VERIFIER_WEBHOOK_SECRET") };
+}

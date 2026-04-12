@@ -275,6 +275,19 @@ impl Database {
         Ok(())
     }
 
+    pub fn count_recent_endorsements(
+        &self,
+        subject_id: &Uuid,
+        window_minutes: i64,
+    ) -> Result<u32> {
+        let count: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND created_at > datetime('now', '-' || ? || ' minutes')",
+            params![subject_id.to_string(), window_minutes],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     pub fn get_endorsement_count(&self, subject_id: &Uuid) -> Result<u32> {
         let count: u32 = self.conn.query_row(
             "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status != 'failed'",
