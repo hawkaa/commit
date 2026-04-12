@@ -6,6 +6,11 @@ use crate::models::signal::{
 };
 use crate::services::github::GitHubRepo;
 
+/// Weight for verified endorsements in score calculation.
+pub const VERIFIED_WEIGHT: f64 = 1.0;
+/// Weight for pending_attestation endorsements (lower trust).
+pub const PENDING_WEIGHT: f64 = 0.3;
+
 #[must_use]
 pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitScore {
     let years_active = years_since(&repo.created_at);
@@ -35,6 +40,65 @@ pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitS
         score,
         breakdown,
         layer1_only: true,
+    }
+}
+
+/// Compute a commit score that factors in endorsement status weighting.
+///
+/// Verified endorsements count fully, pending ones are down-weighted.
+/// Layer 2 scoring activates when any non-failed endorsements exist.
+#[must_use]
+pub fn score_github_repo_with_endorsements(
+    repo: &GitHubRepo,
+    contributor_count: usize,
+    verified_count: u32,
+    pending_count: u32,
+) -> CommitScore {
+    let years_active = years_since(&repo.created_at);
+    let days_since_push = days_since(&repo.pushed_at);
+    let maintenance_proxy = if days_since_push < 30.0 {
+        10.0
+    } else if days_since_push < 180.0 {
+        5.0
+    } else {
+        1.0
+    };
+
+    #[allow(clippy::cast_precision_loss)]
+    let community = (contributor_count as f64 * 0.5).min(10.0);
+
+    let has_layer2 = verified_count > 0 || pending_count > 0;
+
+    #[allow(clippy::cast_precision_loss)]
+    let weighted_sum =
+        f64::from(verified_count) * VERIFIED_WEIGHT + f64::from(pending_count) * PENDING_WEIGHT;
+
+    let endorsements = (weighted_sum * 5.0).min(30.0);
+
+    #[allow(clippy::cast_precision_loss)]
+    let total = f64::from(verified_count + pending_count);
+    let proof_strength = if total > 0.0 {
+        (weighted_sum / total) * 15.0
+    } else {
+        0.0
+    };
+
+    let breakdown = ScoreBreakdown {
+        longevity: (years_active * 3.0).min(15.0),
+        maintenance: maintenance_proxy,
+        community,
+        financial: 0.0,
+        endorsements,
+        proof_strength,
+        ..ScoreBreakdown::default()
+    };
+
+    let score = compute_score(&breakdown, has_layer2);
+
+    CommitScore {
+        score,
+        breakdown,
+        layer1_only: !has_layer2,
     }
 }
 

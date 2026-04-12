@@ -297,6 +297,24 @@ impl Database {
         Ok(count)
     }
 
+    /// Returns `(verified_count, pending_count)` for non-failed endorsements.
+    pub fn get_endorsement_counts_by_status(
+        &self,
+        subject_id: &Uuid,
+    ) -> Result<(u32, u32)> {
+        let verified: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status = 'verified'",
+            params![subject_id.to_string()],
+            |row| row.get(0),
+        )?;
+        let pending: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status = 'pending_attestation'",
+            params![subject_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok((verified, pending))
+    }
+
     /// Returns `(signals_json, score_json)` if a fresh cache entry exists.
     /// Returns `None` if missing or stale (older than `CACHE_TTL_SECS`).
     pub fn get_cached_signals(&self, subject_id: &Uuid) -> Result<Option<(String, String)>> {
