@@ -51,12 +51,17 @@ pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitS
 ///
 /// Verified endorsements count fully, pending ones are down-weighted.
 /// Layer 2 scoring activates when any non-failed endorsements exist.
+///
+/// `avg_tenure_months` is the average age of endorsements for this subject.
+/// `unique_endorser_count` is the number of unique endorsers (0 until network keyring lands).
 #[must_use]
 pub fn score_github_repo_with_endorsements(
     repo: &GitHubRepo,
     contributor_count: usize,
     verified_count: u32,
     pending_count: u32,
+    avg_tenure_months: f64,
+    unique_endorser_count: u32,
 ) -> CommitScore {
     let mut breakdown = layer1_breakdown(repo, contributor_count);
 
@@ -75,6 +80,9 @@ pub fn score_github_repo_with_endorsements(
     } else {
         0.0
     };
+
+    breakdown.tenure = avg_tenure_months.min(10.0);
+    breakdown.network_density = (f64::from(unique_endorser_count) * 3.0).min(15.0);
 
     let score = compute_score(&breakdown, has_layer2);
 

@@ -108,6 +108,11 @@ pub async fn submit_endorsement(
         "pending_attestation"
     };
 
+    // Invalidate cached score so the next trust card request recomputes with the new endorsement
+    if let Err(e) = db.invalidate_signal_cache(&subject.id) {
+        tracing::warn!("Failed to invalidate signal cache for {}: {e}", subject.id);
+    }
+
     // Create a pending attestation record (will be submitted on-chain in Phase 2)
     let attestation_id = Uuid::new_v4();
     db.create_attestation(&attestation_id, &endorsement_id, "pending")

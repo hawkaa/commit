@@ -1,5 +1,7 @@
 use commit_backend::models::signal::{ScoreBreakdown, compute_score};
-use commit_backend::services::score::{PENDING_WEIGHT, VERIFIED_WEIGHT};
+use commit_backend::services::score::{
+    PENDING_WEIGHT, VERIFIED_WEIGHT, score_github_repo_with_endorsements,
+};
 
 #[test]
 fn zero_signals_returns_none() {
@@ -151,4 +153,112 @@ fn endorsements_field_caps_at_30() {
     let weighted_sum = 10.0 * VERIFIED_WEIGHT;
     let endorsements = (weighted_sum * 5.0).min(30.0);
     assert!((endorsements - 30.0).abs() < f64::EPSILON);
+}
+
+// --- Tenure scoring tests ---
+
+use commit_backend::services::github::GitHubRepo;
+
+fn make_test_repo() -> GitHubRepo {
+    GitHubRepo {
+        full_name: "test/repo".to_string(),
+        description: None,
+        created_at: "2023-01-01T00:00:00Z".to_string(),
+        pushed_at: chrono::Utc::now().to_rfc3339(),
+        stargazers_count: 100,
+        forks_count: 10,
+        open_issues_count: 5,
+    }
+}
+
+#[test]
+fn tenure_3_months_produces_3() {
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 0);
+    assert!(
+        (score.breakdown.tenure - 3.0).abs() < f64::EPSILON,
+        "tenure should be 3.0, got {}",
+        score.breakdown.tenure
+    );
+}
+
+#[test]
+fn tenure_15_months_caps_at_10() {
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 15.0, 0);
+    assert!(
+        (score.breakdown.tenure - 10.0).abs() < f64::EPSILON,
+        "tenure should be capped at 10.0, got {}",
+        score.breakdown.tenure
+    );
+}
+
+#[test]
+fn tenure_zero_with_no_endorsements() {
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 0, 0, 0.0, 0);
+    assert!(
+        (score.breakdown.tenure - 0.0).abs() < f64::EPSILON,
+        "tenure should be 0.0, got {}",
+        score.breakdown.tenure
+    );
+}
+
+#[test]
+fn tenure_near_zero_for_fresh_endorsement() {
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 1, 0, 0.01, 0);
+    assert!(
+        score.breakdown.tenure < 0.1,
+        "tenure should be near 0, got {}",
+        score.breakdown.tenure
+    );
+}
+
+#[test]
+fn tenure_increases_blended_score() {
+    let repo = make_test_repo();
+    let score_no_tenure = score_github_repo_with_endorsements(&repo, 10, 3, 0, 0.0, 0);
+    let score_with_tenure = score_github_repo_with_endorsements(&repo, 10, 3, 0, 5.0, 0);
+    assert!(
+        score_with_tenure.score.unwrap() >= score_no_tenure.score.unwrap(),
+        "Score with tenure ({:?}) should be >= score without ({:?})",
+        score_with_tenure.score,
+        score_no_tenure.score
+    );
+}
+
+#[test]
+fn network_density_zero_when_no_endorser_count() {
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 0);
+    assert!(
+        (score.breakdown.network_density - 0.0).abs() < f64::EPSILON,
+        "network_density should be 0.0 when unique_endorser_count is 0, got {}",
+        score.breakdown.network_density
+    );
+}
+
+#[test]
+fn network_density_computed_from_endorser_count() {
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 4);
+    // min(4 * 3.0, 15.0) = 12.0
+    assert!(
+        (score.breakdown.network_density - 12.0).abs() < f64::EPSILON,
+        "network_density should be 12.0, got {}",
+        score.breakdown.network_density
+    );
+}
+
+#[test]
+fn network_density_caps_at_15() {
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 10);
+    // min(10 * 3.0, 15.0) = 15.0
+    assert!(
+        (score.breakdown.network_density - 15.0).abs() < f64::EPSILON,
+        "network_density should be capped at 15.0, got {}",
+        score.breakdown.network_density
+    );
 }
