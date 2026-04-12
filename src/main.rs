@@ -23,8 +23,12 @@ async fn main() {
     let notary_public_key = std::env::var("NOTARY_PUBLIC_KEY").ok();
 
     if let Some(ref key) = notary_public_key {
-        let fingerprint: String = key.chars().filter(|c| c.is_alphanumeric()).take(16).collect();
-        tracing::info!("Notary public key loaded (fingerprint: {fingerprint}...)");
+        let body: String = key
+            .lines()
+            .filter(|l| !l.starts_with("-----"))
+            .collect();
+        let fingerprint = &body[body.len().saturating_sub(12)..];
+        tracing::info!("Notary public key loaded (tail: ...{fingerprint})");
     } else {
         tracing::warn!("NOTARY_PUBLIC_KEY not set — attestation signature verification unavailable");
     }
