@@ -89,3 +89,13 @@ pub struct Endorsement {
     pub status: AttestationStatus,
     pub created_at: String,
 }
+
+/// Lightweight summary for API responses (trust card, endorsement list).
+#[derive(Serialize)]
+pub struct EndorsementSummary {
+    pub id: String,
+    pub category: String,
+    pub proof_type: String,
+    pub status: String,
+    pub created_at: String,
+}

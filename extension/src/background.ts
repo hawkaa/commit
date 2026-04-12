@@ -109,21 +109,24 @@ async function handleStartEndorsement(
   const { repoOwner, repoName } = msg;
   console.log(`[commit] Starting endorsement for ${repoOwner}/${repoName}`);
 
-  // Wrap the entire flow in a timeout
+  // Shared cancellation flag so the flow skips the API call after timeout
+  const state = { cancelled: false };
+
   const timeoutPromise = new Promise<ProveResult>((resolve) =>
-    setTimeout(
-      () => resolve({ success: false, error: "Timeout", errorCode: "timeout" }),
-      ENDORSEMENT_TIMEOUT_MS
-    )
+    setTimeout(() => {
+      state.cancelled = true;
+      resolve({ success: false, error: "Timeout", errorCode: "timeout" });
+    }, ENDORSEMENT_TIMEOUT_MS)
   );
 
-  const flowPromise = runEndorsementFlow(repoOwner, repoName);
+  const flowPromise = runEndorsementFlow(repoOwner, repoName, state);
   return Promise.race([flowPromise, timeoutPromise]);
 }
 
 async function runEndorsementFlow(
   repoOwner: string,
-  repoName: string
+  repoName: string,
+  state: { cancelled: boolean }
 ): Promise<ProveResult> {
   try {
     await ensureOffscreenDocument();
@@ -168,6 +171,12 @@ async function runEndorsementFlow(
 
   console.log(`[commit] Proof generated in ${result.elapsed}ms`);
 
+  // Skip the API call if the timeout already fired
+  if (state.cancelled) {
+    console.warn("[commit] Endorsement flow completed after timeout — skipping submission");
+    return { success: false, error: "Timeout", errorCode: "timeout" };
+  }
+
   try {
     const resp = await fetch(`${API_BASE}/endorsements`, {
       method: "POST",
@@ -184,12 +193,7 @@ async function runEndorsementFlow(
 
     if (!resp.ok) {
       const text = await resp.text();
-      const errorCode =
-        resp.status === 409
-          ? "duplicate"
-          : resp.status === 400 || resp.status === 404
-            ? "backend_error"
-            : "backend_error";
+      const errorCode = resp.status === 409 ? "duplicate" : "backend_error";
       return {
         success: false,
         error: `Backend error: ${resp.status} ${text}`,

@@ -4,8 +4,7 @@ use axum::{
 };
 
 use crate::AppState;
-use crate::models::{CommitScore, CommitmentSignal, ScoreBreakdown, Subject, SubjectKind};
-use crate::routes::endorsement::EndorsementSummary;
+use crate::models::{CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind};
 use crate::services::score::{build_signals, score_github_repo};
 use uuid::Uuid;
 

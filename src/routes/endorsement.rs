@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::models::{EndorsementCategory, ProofType, SubjectKind};
+use crate::models::{EndorsementCategory, EndorsementSummary, ProofType, SubjectKind};
 use crate::services::db::map_db_error;
 use crate::validation::{validate_transcript_subject, verify_attestation_signature};
 
@@ -140,11 +140,4 @@ pub struct GetEndorsementsQuery {
     pub id: String,
 }
 
-#[derive(Serialize)]
-pub struct EndorsementSummary {
-    pub id: String,
-    pub category: String,
-    pub proof_type: String,
-    pub status: String,
-    pub created_at: String,
-}
+// EndorsementSummary is defined in models::endorsement and re-exported from models

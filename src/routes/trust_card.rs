@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::models::{CommitScore, CommitmentSignal, ScoreBreakdown, Subject, SubjectKind};
-use crate::routes::endorsement::EndorsementSummary;
+use crate::models::{CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind};
+use crate::services::db::EndorsementRow;
 use crate::services::score::{build_signals, score_github_repo};
 
 #[derive(Deserialize)]
@@ -24,6 +24,18 @@ pub struct TrustCardResponse {
     pub score: CommitScore,
     pub endorsement_count: u32,
     pub recent_endorsements: Vec<EndorsementSummary>,
+}
+
+fn map_endorsement_rows(rows: Vec<EndorsementRow>) -> Vec<EndorsementSummary> {
+    rows.into_iter()
+        .map(|r| EndorsementSummary {
+            id: r.id,
+            category: r.category,
+            proof_type: r.proof_type,
+            status: r.status,
+            created_at: r.created_at,
+        })
+        .collect()
 }
 
 #[allow(clippy::missing_errors_doc)] // Axum handler
@@ -66,18 +78,9 @@ async fn get_github_trust_card(
                 layer1_only: true,
             });
             let endorsement_count = db.get_endorsement_count(&subject.id).unwrap_or(0);
-            let recent_endorsements = db
-                .get_recent_endorsements(&subject.id, 5)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|r| EndorsementSummary {
-                    id: r.id,
-                    category: r.category,
-                    proof_type: r.proof_type,
-                    status: r.status,
-                    created_at: r.created_at,
-                })
-                .collect();
+            let recent_endorsements = map_endorsement_rows(
+                db.get_recent_endorsements(&subject.id, 5).unwrap_or_default(),
+            );
             return Ok(Json(TrustCardResponse {
                 subject,
                 signals,
@@ -132,18 +135,9 @@ async fn get_github_trust_card(
         &serde_json::to_string(&score).unwrap_or_default(),
     );
     let endorsement_count = db.get_endorsement_count(&subject.id).unwrap_or(0);
-    let recent_endorsements = db
-        .get_recent_endorsements(&subject.id, 5)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| EndorsementSummary {
-            id: r.id,
-            category: r.category,
-            proof_type: r.proof_type,
-            status: r.status,
-            created_at: r.created_at,
-        })
-        .collect();
+    let recent_endorsements = map_endorsement_rows(
+        db.get_recent_endorsements(&subject.id, 5).unwrap_or_default(),
+    );
 
     Ok(Json(TrustCardResponse {
         subject,
