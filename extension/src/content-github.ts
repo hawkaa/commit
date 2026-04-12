@@ -14,7 +14,16 @@ interface TrustCardData {
   subject: { identifier: string; display_name: string };
   score: {
     score: number | null;
-    breakdown: { longevity: number; community: number; maintenance: number };
+    layer1_only: boolean;
+    breakdown: {
+      longevity: number;
+      community: number;
+      maintenance: number;
+      endorsements: number;
+      proof_strength: number;
+      tenure: number;
+      network_density: number;
+    };
   };
   endorsement_count: number;
   recent_endorsements: EndorsementSummary[];
@@ -97,7 +106,7 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
 
   const label = document.createElement("div");
   label.className = "commit-card-label";
-  label.textContent = "Commit Score";
+  label.textContent = score.layer1_only === false ? "Commit Score · Public + ZK" : "Commit Score";
 
   const signals = document.createElement("div");
   signals.className = "commit-card-signals";
@@ -111,6 +120,18 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
     network.className = "commit-card-network";
     network.textContent = `${data.endorsement_count} ZK endorsement${data.endorsement_count === 1 ? "" : "s"}`;
     details.appendChild(network);
+  }
+
+  if (score.layer1_only === false) {
+    const zkLine = document.createElement("div");
+    zkLine.className = "commit-card-network";
+    const text = document.createTextNode("Score includes ZK endorsements ");
+    const tag = document.createElement("span");
+    tag.className = "commit-zk-tag";
+    tag.textContent = "ZK";
+    zkLine.appendChild(text);
+    zkLine.appendChild(tag);
+    details.appendChild(zkLine);
   }
 
   const endorseBtn = document.createElement("button");
