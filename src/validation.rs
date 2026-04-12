@@ -14,6 +14,9 @@ pub fn validate_transcript_subject(
     proof_type: &ProofType,
     subject_id: &str,
 ) -> Result<(), StatusCode> {
+    // Reject transcripts with multiple HTTP request lines (pipelining defense)
+    validate_single_request(transcript_sent)?;
+
     match proof_type {
         ProofType::GitHistory => validate_git_history_transcript(transcript_sent, subject_id),
         ProofType::CiLogs => validate_ci_logs_transcript(transcript_sent, subject_id),
@@ -32,6 +35,35 @@ pub fn validate_transcript_subject(
             Err(StatusCode::BAD_REQUEST)
         }
     }
+}
+
+/// Reject transcripts containing multiple HTTP request lines (pipelining defense).
+///
+/// Scans all lines for HTTP method patterns. If more than one request line is
+/// found, the transcript is rejected to prevent an attacker from smuggling a
+/// second request that targets a different resource.
+fn validate_single_request(transcript_sent: &str) -> Result<(), StatusCode> {
+    let request_count = transcript_sent
+        .lines()
+        .filter(|line| {
+            matches!(
+                line.split_whitespace().next(),
+                Some("GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS")
+            ) && line
+                .split_whitespace()
+                .nth(1)
+                .is_some_and(|path| path.starts_with('/'))
+        })
+        .count();
+
+    if request_count > 1 {
+        tracing::warn!(
+            "Transcript contains {request_count} HTTP request lines — rejecting (pipelining)"
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    Ok(())
 }
 
 /// Validate that a git_history transcript contains a request to `/repos/{owner}/{repo}`.
@@ -510,5 +542,51 @@ mod tests {
         assert!(
             validate_transcript_subject(transcript, None, &ProofType::CiLogs, "owner/repo").is_ok()
         );
+    }
+
+    // --- HTTP pipelining defense tests ---
+
+    #[test]
+    fn single_request_passes() {
+        assert!(validate_single_request("GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n").is_ok());
+    }
+
+    #[test]
+    fn multiple_requests_rejected() {
+        let transcript = "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n\r\nGET /repos/evil/repo HTTP/1.1\r\nHost: api.github.com\r\n";
+        assert_eq!(
+            validate_single_request(transcript).unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn pipelined_post_rejected() {
+        let transcript = "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n\r\nPOST /repos/owner/evil HTTP/1.1\r\n";
+        assert_eq!(
+            validate_single_request(transcript).unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn non_request_lines_with_method_words_ok() {
+        // Lines that contain HTTP method words but don't match the request line pattern
+        let transcript = "GET /repos/owner/repo HTTP/1.1\r\nX-Custom: GET something\r\n";
+        assert!(validate_single_request(transcript).is_ok());
+    }
+
+    #[test]
+    fn pipelining_blocks_full_transcript_validation() {
+        let transcript = "GET /repos/owner/repo HTTP/1.1\r\nHost: api.github.com\r\n\r\nGET /repos/evil/other HTTP/1.1\r\n";
+        assert_eq!(
+            validate_transcript_subject(transcript, None, &ProofType::GitHistory, "owner/repo").unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn empty_transcript_passes_pipelining_check() {
+        assert!(validate_single_request("").is_ok());
     }
 }
