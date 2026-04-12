@@ -123,6 +123,24 @@ async function handleStartEndorsement(
   return Promise.race([flowPromise, timeoutPromise]);
 }
 
+/**
+ * Compute the SHA-256 hash of the user's Ed25519 public key and return it as hex.
+ * Returns null if the keypair is not available.
+ */
+async function getEndorserKeyHash(): Promise<string | null> {
+  try {
+    const stored = await chrome.storage.local.get("keypair");
+    if (!stored.keypair?.publicKey) return null;
+    const pubKeyBytes = new Uint8Array(stored.keypair.publicKey);
+    const hashBuf = await crypto.subtle.digest("SHA-256", pubKeyBytes);
+    return Array.from(new Uint8Array(hashBuf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
+}
+
 async function runEndorsementFlow(
   repoOwner: string,
   repoName: string,
@@ -178,17 +196,23 @@ async function runEndorsementFlow(
   }
 
   try {
+    const endorserKeyHash = await getEndorserKeyHash();
+    const body: Record<string, string | undefined> = {
+      subject_kind: "github",
+      subject_id: `${repoOwner}/${repoName}`,
+      category: "usage",
+      attestation: result.attestation,
+      proof_type: "git_history",
+      transcript_sent: result.transcriptSent,
+    };
+    if (endorserKeyHash) {
+      body.endorser_key_hash = endorserKeyHash;
+    }
+
     const resp = await fetch(`${API_BASE}/endorsements`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        subject_kind: "github",
-        subject_id: `${repoOwner}/${repoName}`,
-        category: "usage",
-        attestation: result.attestation,
-        proof_type: "git_history",
-        transcript_sent: result.transcriptSent,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!resp.ok) {
