@@ -302,16 +302,24 @@ impl Database {
         &self,
         subject_id: &Uuid,
     ) -> Result<(u32, u32)> {
-        let verified: u32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status = 'verified'",
-            params![subject_id.to_string()],
-            |row| row.get(0),
+        let mut stmt = self.conn.prepare(
+            "SELECT status, COUNT(*) FROM endorsements \
+             WHERE subject_id = ? AND status IN ('verified', 'pending_attestation') \
+             GROUP BY status",
         )?;
-        let pending: u32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status = 'pending_attestation'",
-            params![subject_id.to_string()],
-            |row| row.get(0),
-        )?;
+        let mut verified: u32 = 0;
+        let mut pending: u32 = 0;
+        let rows = stmt.query_map(params![subject_id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?;
+        for row in rows {
+            let (status, count) = row?;
+            match status.as_str() {
+                "verified" => verified = count,
+                "pending_attestation" => pending = count,
+                _ => {}
+            }
+        }
         Ok((verified, pending))
     }
 

@@ -7,9 +7,7 @@ use crate::AppState;
 use crate::models::{EndorsementCategory, ProofType, SubjectKind};
 use crate::services::db::map_db_error;
 use crate::validation::{validate_transcript_subject, verify_attestation_signature};
-
-const RATE_LIMIT_WINDOW_MINUTES: i64 = 60;
-const RATE_LIMIT_MAX_ENDORSEMENTS: u32 = 5;
+use crate::{RATE_LIMIT_MAX_ENDORSEMENTS, RATE_LIMIT_WINDOW_MINUTES};
 
 #[derive(Deserialize)]
 pub struct SubmitEndorsementRequest {
