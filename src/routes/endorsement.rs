@@ -48,9 +48,12 @@ pub async fn submit_endorsement(
     }
 
     // Verify attestation signature when notary public key is configured
-    if let Some(ref key) = state.notary_public_key {
+    let signature_verified = if let Some(ref key) = state.notary_public_key {
         verify_attestation_signature(&attestation_bytes, key)?;
-    }
+        true
+    } else {
+        false
+    };
 
     let proof_hash = Sha256::digest(&attestation_bytes).to_vec();
 
@@ -76,6 +79,15 @@ pub async fn submit_endorsement(
     )
     .map_err(map_db_error)?;
 
+    // Promote to verified if attestation signature was validated
+    let status = if signature_verified {
+        db.update_endorsement_status(&endorsement_id, "verified")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        "verified"
+    } else {
+        "pending_attestation"
+    };
+
     // Create a pending attestation record (will be submitted on-chain in Phase 2)
     let attestation_id = Uuid::new_v4();
     db.create_attestation(&attestation_id, &endorsement_id, "pending")
@@ -83,7 +95,7 @@ pub async fn submit_endorsement(
 
     Ok(Json(EndorsementResponse {
         id: endorsement_id.to_string(),
-        status: "pending_attestation".to_string(),
+        status: status.to_string(),
     }))
 }
 
