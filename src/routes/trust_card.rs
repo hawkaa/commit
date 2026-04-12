@@ -34,15 +34,18 @@ fn map_endorsement_rows(
     rows: Vec<EndorsementRow>,
     db: &crate::services::db::Database,
 ) -> Vec<EndorsementSummary> {
+    let endorsement_ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    let attestation_map = db
+        .get_attestations_for_endorsements(&endorsement_ids)
+        .unwrap_or_default();
+
     rows.into_iter()
         .map(|r| {
-            let (on_chain, tx_hash) = db
-                .get_attestation_for_endorsement(&r.id)
-                .ok()
-                .flatten()
+            let (on_chain, tx_hash) = attestation_map
+                .get(&r.id)
                 .map_or((false, None), |att| {
                     if att.tx_hash.is_some() {
-                        (true, att.tx_hash)
+                        (true, att.tx_hash.clone())
                     } else {
                         (false, None)
                     }

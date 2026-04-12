@@ -141,16 +141,19 @@ pub async fn get_endorsements(
         .get_endorsements_for_subject(&subject.id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let endorsement_ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    let attestation_map = db
+        .get_attestations_for_endorsements(&endorsement_ids)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let summaries: Vec<EndorsementSummary> = rows
         .into_iter()
         .map(|r| {
-            let (on_chain, tx_hash) = db
-                .get_attestation_for_endorsement(&r.id)
-                .ok()
-                .flatten()
+            let (on_chain, tx_hash) = attestation_map
+                .get(&r.id)
                 .map_or((false, None), |att| {
                     if att.tx_hash.is_some() {
-                        (true, att.tx_hash)
+                        (true, att.tx_hash.clone())
                     } else {
                         (false, None)
                     }

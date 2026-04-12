@@ -91,7 +91,7 @@ impl Database {
                 id TEXT PRIMARY KEY,
                 endorsement_id TEXT NOT NULL,
                 tx_hash TEXT,
-                chain TEXT NOT NULL DEFAULT 'pending',
+                chain TEXT NOT NULL DEFAULT 'base_sepolia',
                 block_number INTEGER,
                 attested_at TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
@@ -156,6 +156,11 @@ impl Database {
                 CREATE UNIQUE INDEX idx_endorsements_unique_proof_hash ON endorsements(proof_hash);",
             )?;
         }
+
+        // Migration: normalize chain='pending' to 'base_sepolia'
+        self.conn.execute_batch(
+            "UPDATE attestations SET chain = 'base_sepolia' WHERE chain = 'pending';",
+        )?;
 
         Ok(())
     }
@@ -282,6 +287,57 @@ impl Database {
             params![tx_hash, block_number, id.to_string()],
         )?;
         Ok(())
+    }
+
+    /// Mark an attestation as skipped (e.g. already attested on-chain).
+    /// Sets `chain = 'already_attested'` but leaves `tx_hash = NULL` so that
+    /// `get_attestation_for_endorsement` correctly reports `on_chain: false`
+    /// and `get_pending_attestations` (which filters `tx_hash IS NULL AND chain = 'base_sepolia'`)
+    /// excludes it from future batches.
+    pub fn mark_attestation_skipped(&self, id: &Uuid) -> Result<()> {
+        self.conn.execute(
+            "UPDATE attestations SET chain = 'already_attested' WHERE id = ?",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Batch-fetch attestations for multiple endorsement IDs in a single query.
+    /// Returns a map from endorsement_id to `AttestationRow`.
+    pub fn get_attestations_for_endorsements(
+        &self,
+        endorsement_ids: &[&str],
+    ) -> Result<std::collections::HashMap<String, AttestationRow>> {
+        if endorsement_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let placeholders: Vec<&str> = endorsement_ids.iter().map(|_| "?").collect();
+        let sql = format!(
+            "SELECT id, endorsement_id, tx_hash, chain, block_number, attested_at \
+             FROM attestations WHERE endorsement_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = endorsement_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(params.as_slice(), |row| {
+            Ok(AttestationRow {
+                id: row.get(0)?,
+                endorsement_id: row.get(1)?,
+                tx_hash: row.get(2)?,
+                chain: row.get(3)?,
+                block_number: row.get(4)?,
+                attested_at: row.get(5)?,
+            })
+        })?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            let att = row?;
+            map.insert(att.endorsement_id.clone(), att);
+        }
+        Ok(map)
     }
 
     pub fn count_recent_endorsements(&self, subject_id: &Uuid, window_minutes: i64) -> Result<u32> {

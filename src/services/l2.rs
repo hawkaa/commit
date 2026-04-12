@@ -37,7 +37,7 @@ impl L2Client {
         rpc_url: &str,
         private_key: &str,
         contract_address: &str,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let signer: PrivateKeySigner = private_key.parse()?;
         let wallet = alloy::network::EthereumWallet::from(signer);
 
@@ -62,7 +62,7 @@ impl L2Client {
         &self,
         endorsement_ids: &[FixedBytes<32>],
         proof_hashes: &[FixedBytes<32>],
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let call = attestBatchCall {
             endorsementIds: endorsement_ids.to_vec(),
             proofHashes: proof_hashes.to_vec(),
@@ -86,13 +86,15 @@ impl L2Client {
     pub async fn wait_for_receipt(
         &self,
         tx_hash: &str,
-    ) -> Result<(String, u64), Box<dyn std::error::Error>> {
+    ) -> Result<(String, u64), Box<dyn std::error::Error + Send + Sync>> {
         let hash: FixedBytes<32> = tx_hash.parse()?;
         let receipt = self
             .provider
             .get_transaction_receipt(hash)
             .await?
-            .ok_or("transaction receipt not found")?;
+            .ok_or_else(|| -> Box<dyn std::error::Error + Send + Sync> {
+                "transaction receipt not found".into()
+            })?;
 
         let block_number = receipt.block_number.unwrap_or(0);
         Ok((tx_hash.to_string(), block_number))
@@ -132,18 +134,41 @@ pub struct PendingAttestation {
 
 /// Background batch submitter: periodically reads pending attestations from the
 /// database, submits them on-chain in batches, and updates the local records.
+///
+/// Catches panics from the inner loop to prevent silent death of the task.
 pub async fn run_batch_submitter(
     db: Arc<Mutex<Database>>,
     l2: L2Client,
     interval_secs: u64,
 ) {
+    loop {
+        let result = run_batch_submitter_inner(&db, &l2, interval_secs).await;
+        match result {
+            Ok(()) => {
+                tracing::error!("L2 batch submitter exited unexpectedly — restarting in 60s");
+            }
+            Err(e) => {
+                tracing::error!(
+                    "L2 batch submitter panicked: {e} — restarting in 60s"
+                );
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    }
+}
+
+async fn run_batch_submitter_inner(
+    db: &Arc<Mutex<Database>>,
+    l2: &L2Client,
+    interval_secs: u64,
+) -> Result<(), String> {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
     // Skip the first immediate tick — let the server finish starting
     interval.tick().await;
 
     loop {
         interval.tick().await;
-        if let Err(e) = process_pending_batch(&db, &l2).await {
+        if let Err(e) = process_pending_batch(db, l2).await {
             tracing::error!("L2 batch submission error: {e}");
         }
     }
@@ -152,10 +177,11 @@ pub async fn run_batch_submitter(
 async fn process_pending_batch(
     db: &Arc<Mutex<Database>>,
     l2: &L2Client,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), String> {
     let pending = {
         let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db.get_pending_attestations(BATCH_SIZE as u32)?
+        db.get_pending_attestations(BATCH_SIZE as u32)
+            .map_err(|e| format!("DB error fetching pending attestations: {e}"))?
     };
 
     if pending.is_empty() {
@@ -186,22 +212,25 @@ async fn process_pending_batch(
         Ok(hash) => hash,
         Err(e) => {
             let err_str = e.to_string();
-            // If the contract reverts with "already attested", mark all as complete
+            // If the contract reverts with "already attested", one item caused the
+            // revert but others may not be on-chain yet. Fall back to single-item
+            // submission so each item gets the correct treatment.
             if err_str.contains("already attested") {
-                tracing::warn!("Contract reports 'already attested' — marking batch as complete");
-                let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-                for (i, att_id) in attestation_ids.iter().enumerate() {
-                    let uid = Uuid::parse_str(att_id)?;
-                    db.update_attestation_tx(&uid, "already_attested", 0)?;
-                    tracing::info!(
-                        "Marked attestation {} as already attested (endorsement {})",
-                        att_id,
-                        pending[i].endorsement_id
-                    );
-                }
+                tracing::warn!(
+                    "Batch reverted with 'already attested' — falling back to single-item submission"
+                );
+                submit_items_individually(
+                    db,
+                    l2,
+                    &pending,
+                    &endorsement_ids,
+                    &proof_hashes,
+                    &attestation_ids,
+                )
+                .await?;
                 return Ok(());
             }
-            return Err(e);
+            return Err(err_str);
         }
     };
 
@@ -222,8 +251,10 @@ async fn process_pending_batch(
     // Update all attestation rows with tx_hash and block_number
     let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
     for att_id in &attestation_ids {
-        let uid = Uuid::parse_str(att_id)?;
-        db.update_attestation_tx(&uid, &tx_hash_confirmed, block_number as i64)?;
+        let uid =
+            Uuid::parse_str(att_id).map_err(|e| format!("Invalid attestation UUID: {e}"))?;
+        db.update_attestation_tx(&uid, &tx_hash_confirmed, block_number as i64)
+            .map_err(|e| format!("DB error updating attestation {att_id}: {e}"))?;
     }
 
     tracing::info!(
@@ -234,4 +265,101 @@ async fn process_pending_batch(
     );
 
     Ok(())
+}
+
+/// Submit attestations one at a time. Used as fallback when a batch reverts
+/// with "already attested" — we don't know which item caused the revert.
+async fn submit_items_individually(
+    db: &Arc<Mutex<Database>>,
+    l2: &L2Client,
+    pending: &[PendingAttestation],
+    endorsement_ids: &[FixedBytes<32>],
+    proof_hashes: &[FixedBytes<32>],
+    attestation_ids: &[String],
+) -> Result<(), String> {
+    for (i, att_id) in attestation_ids.iter().enumerate() {
+        let uid =
+            Uuid::parse_str(att_id).map_err(|e| format!("Invalid attestation UUID: {e}"))?;
+        let single_eid = std::slice::from_ref(&endorsement_ids[i]);
+        let single_ph = std::slice::from_ref(&proof_hashes[i]);
+
+        match l2.submit_batch(single_eid, single_ph).await {
+            Ok(tx_hash) => {
+                // Wait for receipt
+                match l2.wait_for_receipt(&tx_hash).await {
+                    Ok((tx_hash_confirmed, block_number)) => {
+                        let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+                        db.update_attestation_tx(&uid, &tx_hash_confirmed, block_number as i64)
+                            .map_err(|e| {
+                                format!("DB error updating attestation {att_id}: {e}")
+                            })?;
+                        tracing::info!(
+                            "Single-item submit succeeded for attestation {} (endorsement {}) tx={}",
+                            att_id,
+                            pending[i].endorsement_id,
+                            tx_hash_confirmed
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Could not get receipt for single-item tx {tx_hash} (attestation {}): {e} — leaving pending",
+                            att_id
+                        );
+                        // Leave pending for retry next cycle
+                    }
+                }
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("already attested") {
+                    // This specific item is already on-chain; mark skipped
+                    let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+                    db.mark_attestation_skipped(&uid).map_err(|e| {
+                        format!("DB error marking attestation {att_id} skipped: {e}")
+                    })?;
+                    tracing::info!(
+                        "Marked attestation {} as already_attested (endorsement {})",
+                        att_id,
+                        pending[i].endorsement_id
+                    );
+                } else {
+                    // Some other error — leave pending for retry
+                    tracing::warn!(
+                        "Single-item submit failed for attestation {} (endorsement {}): {err_str} — leaving pending",
+                        att_id,
+                        pending[i].endorsement_id
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uuid_to_bytes32_round_trip() {
+        let original = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let b32 = uuid_to_bytes32(&original);
+        let bytes = b32.as_slice();
+
+        // First 16 bytes must be zero padding
+        assert_eq!(&bytes[..16], &[0u8; 16], "left pad must be all zeros");
+
+        // Last 16 bytes must match the UUID bytes
+        assert_eq!(
+            &bytes[16..],
+            original.as_bytes(),
+            "right half must equal UUID bytes"
+        );
+
+        // Round-trip: extract last 16 bytes and reconstruct UUID
+        let mut uuid_bytes = [0u8; 16];
+        uuid_bytes.copy_from_slice(&bytes[16..]);
+        let reconstructed = Uuid::from_bytes(uuid_bytes);
+        assert_eq!(reconstructed, original, "round-trip must produce the same UUID");
+    }
 }
