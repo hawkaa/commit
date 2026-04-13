@@ -10,6 +10,9 @@ use crate::models::{
 use crate::services::score::{build_signals, score_github_repo, score_github_repo_with_endorsements};
 use uuid::Uuid;
 
+// TODO: replace after CWS approval
+const CHROME_WEBSTORE_URL: &str = "https://chromewebstore.google.com/";
+
 #[allow(clippy::missing_errors_doc)]
 pub async fn get_trust_page(
     State(state): State<AppState>,
@@ -240,6 +243,8 @@ fn render_html(
     } else {
         r#"<span class="layer-badge layer-badge-zk">Public + ZK data</span>"#
     };
+
+    let cta_url = CHROME_WEBSTORE_URL;
 
     format!(
         r#"<!DOCTYPE html>
@@ -498,6 +503,47 @@ fn render_html(
       color: #888;
       padding: 8px 0;
     }}
+    .install-cta {{
+      background: #fff;
+      border: 1px solid #e5e5e0;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }}
+    .install-cta-title {{
+      font-size: 16px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }}
+    .install-cta-subtitle {{
+      font-size: 13px;
+      font-weight: 400;
+      color: #666;
+    }}
+    .install-cta-btn {{
+      display: inline-block;
+      background: #1a1a2e;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+    }}
+    .install-cta-btn:hover {{
+      opacity: 0.9;
+    }}
+    .install-cta-btn:focus-visible {{
+      outline: 2px solid #16a34a;
+      outline-offset: 2px;
+    }}
     .badge-section {{
       margin-top: 32px;
       padding: 24px;
@@ -540,6 +586,8 @@ fn render_html(
       .score-number {{ font-size: 22px; }}
       .signals {{ grid-template-columns: 1fr 1fr; }}
       .breakdown {{ grid-template-columns: 1fr; }}
+      .install-cta {{ flex-direction: column; align-items: stretch; }}
+      .install-cta-btn {{ text-align: center; width: 100%; }}
     }}
   </style>
 </head>
@@ -576,6 +624,14 @@ fn render_html(
     </div>
 
     {endorsements_html}
+
+    <div class="install-cta">
+      <div class="install-cta-text">
+        <div class="install-cta-title">Endorse this repo</div>
+        <div class="install-cta-subtitle">Add ZK-verified commitment signals with one click &mdash; on GitHub, Google, and everywhere you already browse.</div>
+      </div>
+      <a href="{cta_url}" target="_blank" rel="noopener" class="install-cta-btn">Get the Commit extension</a>
+    </div>
 
     <div class="badge-section">
       <div class="card-title">Add badge to README</div>

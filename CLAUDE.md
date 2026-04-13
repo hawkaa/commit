@@ -86,7 +86,7 @@ Do not deviate without explicit user approval.
 ### Phase 3 — Endorse Everywhere + Launch (weeks 6-9)
 See CEO plan: `~/.gstack/projects/commit/ceo-plans/2026-04-12-phase3-one-network-endorsements.md`
 - [ ] SERP card: add endorsement count + endorse button (parity with GitHub card)
-- [ ] Trust page: add "Get extension" CTA (growth loop)
+- [x] Trust page: add "Get extension" CTA (growth loop)
 - [ ] Remove dead keyring code (popup keyring UI, POST /network-query, NETWORK_QUERY handler)
 - [ ] "Not for me" negative endorsement signal (sentiment field, upsert, score impact)
 - [ ] "You endorsed this" revisit indicator (local cache)
