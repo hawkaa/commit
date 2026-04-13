@@ -93,6 +93,7 @@ See CEO plan: `~/.gstack/projects/commit/ceo-plans/2026-04-12-phase3-one-network
 - [x] "Add badge to README" CTA on GitHub trust cards (clipboard)
 - [x] Post-install onboarding page (closes growth loop conversion cliff)
 - [ ] Design fixes: absolute badge URLs, install CTA, focus-visible, score animation (8 findings from design audit)
+- [ ] Replace `CHROME_WEBSTORE_URL` placeholder in `src/routes/trust_page.rs` after Chrome Web Store approval
 - [ ] Seed endorsements from founder
 - [ ] Launch: HN, crypto Twitter, Rust community
 
