@@ -4,14 +4,14 @@ use axum::{
 };
 
 use crate::AppState;
-
-// TODO: replace after CWS approval
-const CHROME_WEBSTORE_URL: &str = "https://chromewebstore.google.com/";
 use crate::models::{
     CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind,
 };
 use crate::services::score::{build_signals, score_github_repo, score_github_repo_with_endorsements};
 use uuid::Uuid;
+
+// TODO: replace after CWS approval
+const CHROME_WEBSTORE_URL: &str = "https://chromewebstore.google.com/";
 
 #[allow(clippy::missing_errors_doc)]
 pub async fn get_trust_page(
