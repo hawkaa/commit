@@ -18,7 +18,7 @@ async function launchWithExtension(): Promise<BrowserContext> {
   });
 }
 
-test("extension loads without errors", async () => {
+test("extension loads without errors and opens onboarding on install", async () => {
   test.setTimeout(30000);
   const context = await launchWithExtension();
 
@@ -27,6 +27,31 @@ test("extension loads without errors", async () => {
   if (!sw) {
     sw = await context.waitForEvent("serviceworker", { timeout: 10000 });
   }
+
+  // Wait for the onboarding tab to open (onInstalled fires reason: "install")
+  // Check existing pages first (tab may already exist if onInstalled fired
+  // before we subscribed), then fall back to waitForEvent.
+  let onboardingPage: import("@playwright/test").Page | undefined;
+  onboardingPage = context
+    .pages()
+    .find((p) => p.url().includes("onboarding.html"));
+
+  if (!onboardingPage) {
+    const newPage = await context.waitForEvent("page", {
+      predicate: (p) => p.url().includes("onboarding.html"),
+      timeout: 5000,
+    });
+    onboardingPage = newPage;
+  }
+
+  expect(onboardingPage).toBeDefined();
+  console.log(`Onboarding tab URL: ${onboardingPage!.url()}`);
+
+  // Verify the CTA link is present with correct href
+  const ctaLink = onboardingPage!.locator('a.cta[href="https://github.com/"]');
+  await expect(ctaLink).toBeVisible({ timeout: 3000 });
+  const ctaText = await ctaLink.textContent();
+  expect(ctaText).toContain("Visit a GitHub repo");
 
   // Navigate to a page to trigger the content script
   const page = await context.newPage();

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome to Commit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f0;
+      color: #1a1a2e;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 80px 32px 48px;
+      text-align: center;
+    }
+    .wordmark {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: #1a1a2e;
+      margin-bottom: 48px;
+    }
+    .score-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 32px;
+    }
+    .score-number {
+      font-family: 'Geist', sans-serif;
+      font-weight: 800;
+      font-size: 28px;
+      color: #fff;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .body-text {
+      font-size: 16px;
+      font-weight: 400;
+      color: #666666;
+      max-width: 440px;
+      margin: 0 auto 32px;
+    }
+    .cta {
+      display: inline-block;
+      background: #1a1a2e;
+      color: #fff;
+      font-family: 'Geist', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      transition: background 150ms ease-out;
+    }
+    .cta:hover {
+      background: #2a2a3e;
+    }
+    .cta:focus-visible {
+      outline: 2px solid #16a34a;
+      outline-offset: 2px;
+    }
+    .secondary-link {
+      display: block;
+      margin-top: 16px;
+      font-size: 13px;
+      color: #888888;
+      text-decoration: none;
+    }
+    .secondary-link:hover {
+      color: #1a1a2e;
+    }
+    .secondary-link:focus-visible {
+      outline: 2px solid #16a34a;
+      outline-offset: 2px;
+    }
+    .footer {
+      margin-top: 64px;
+      font-size: 13px;
+      color: #888888;
+    }
+    @media (max-width: 480px) {
+      .container { padding: 48px 16px 32px; }
+      .score-circle { width: 56px; height: 56px; }
+      .score-number { font-size: 22px; }
+      h1 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="wordmark">commit</div>
+
+    <div class="score-circle">
+      <span class="score-number">&mdash;</span>
+    </div>
+
+    <h1>Commit is installed.</h1>
+    <p class="body-text">
+      See verifiable trust signals for any GitHub repo — right where you already make decisions.
+      Your first score is one click away.
+    </p>
+
+    <a class="cta" href="https://github.com/" rel="noopener noreferrer">Visit a GitHub repo</a>
+    <a class="secondary-link" href="https://commit-backend.fly.dev/" rel="noopener noreferrer">Learn more</a>
+
+    <div class="footer">Commit — verifiable trust for open source</div>
+  </div>
+</body>
+</html>

@@ -53,6 +53,7 @@ module.exports = (env, argv) => {
           { from: "icons", to: "icons" },
           { from: "src/offscreen.html", to: "offscreen.html" },
           { from: "src/popup.html", to: "popup.html" },
+          { from: "src/onboarding.html", to: "onboarding.html" },
           { from: "src/trust-card.css", to: "trust-card.css" },
           // offscreen.js — plain JS relay (not webpack-bundled, no WASM deps)
           { from: "src/offscreen-bundle.js", to: "offscreen.js" },
