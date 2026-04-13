@@ -18,14 +18,14 @@
     </section>
 
     <section class="popup-section">
-      <h2 class="popup-section-title">YOUR NETWORK</h2>
-      <div id="keyring-list" class="keyring-list"></div>
-      <div class="keyring-add">
-        <input id="add-key-input" type="text" class="popup-input" placeholder="Paste public key (64 hex chars)" maxlength="64" />
-        <input id="add-label-input" type="text" class="popup-input" placeholder="Label (e.g. Alice)" maxlength="32" />
-        <button id="add-key-btn" class="popup-btn">Add to network</button>
+      <h2 class="popup-section-title">ACTIVITY</h2>
+      <div class="activity-count">
+        <span id="endorsement-count" class="activity-figure">0</span>
+        <span id="endorsement-label" class="activity-label">endorsements made</span>
       </div>
     </section>
+
+    <a href="https://commit-backend.fly.dev/" target="_blank" rel="noopener" class="popup-about-link">About Commit</a>
   </div>
   <script src="popup.js"></script>
 </body>

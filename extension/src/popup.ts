@@ -1,13 +1,7 @@
-// Commit — Popup keyring management
-// Displays public key, manages network contacts
+// Commit — Popup status card
+// Displays public key, endorsement count, and about link
 
 import "./popup.css";
-
-interface KeyringEntry {
-  publicKeyHex: string;
-  label: string;
-  addedAt: string;
-}
 
 /**
  * Hex-encode a byte array.
@@ -59,99 +53,22 @@ async function displayOwnKey(): Promise<void> {
 }
 
 /**
- * Render the keyring list from storage.
+ * Load and display the local endorsement count.
+ * Reads the counter incremented by background.ts after each successful endorsement.
  */
-async function renderKeyring(): Promise<void> {
-  const listEl = document.getElementById("keyring-list")!;
-  const stored = await chrome.storage.local.get("keyring");
-  const keyring: KeyringEntry[] = stored.keyring || [];
+async function displayEndorsementCount(): Promise<void> {
+  const countEl = document.getElementById("endorsement-count")!;
+  const labelEl = document.getElementById("endorsement-label")!;
 
-  listEl.innerHTML = "";
+  const { endorsement_count = 0 } = await chrome.storage.local.get("endorsement_count");
+  const count = endorsement_count as number;
 
-  if (keyring.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "keyring-empty";
-    empty.textContent = "No contacts yet";
-    listEl.appendChild(empty);
-    return;
-  }
-
-  for (const entry of keyring) {
-    const row = document.createElement("div");
-    row.className = "keyring-entry";
-
-    const label = document.createElement("span");
-    label.className = "keyring-label";
-    label.textContent = entry.label;
-
-    const key = document.createElement("span");
-    key.className = "keyring-key";
-    key.textContent = truncateKey(entry.publicKeyHex);
-    key.title = entry.publicKeyHex;
-
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "popup-btn popup-btn--danger";
-    removeBtn.textContent = "Remove";
-    removeBtn.addEventListener("click", async () => {
-      await chrome.runtime.sendMessage({
-        type: "KEYRING_REMOVE",
-        publicKeyHex: entry.publicKeyHex,
-      });
-      await renderKeyring();
-    });
-
-    row.appendChild(label);
-    row.appendChild(key);
-    row.appendChild(removeBtn);
-    listEl.appendChild(row);
-  }
-}
-
-/**
- * Set up the "Add to network" form.
- */
-function setupAddForm(): void {
-  const keyInput = document.getElementById(
-    "add-key-input"
-  ) as HTMLInputElement;
-  const labelInput = document.getElementById(
-    "add-label-input"
-  ) as HTMLInputElement;
-  const addBtn = document.getElementById("add-key-btn")!;
-
-  addBtn.addEventListener("click", async () => {
-    const publicKeyHex = keyInput.value.trim().toLowerCase();
-    const label = labelInput.value.trim() || "Unknown";
-
-    // Validate: 64-char hex (32-byte Ed25519 public key)
-    if (
-      publicKeyHex.length !== 64 ||
-      !/^[0-9a-f]+$/.test(publicKeyHex)
-    ) {
-      keyInput.style.borderColor = "#dc2626";
-      setTimeout(() => {
-        keyInput.style.borderColor = "";
-      }, 2000);
-      return;
-    }
-
-    const result = await chrome.runtime.sendMessage({
-      type: "KEYRING_ADD",
-      publicKeyHex,
-      label,
-    });
-
-    if (result?.success) {
-      keyInput.value = "";
-      labelInput.value = "";
-      await renderKeyring();
-    }
-  });
+  countEl.textContent = String(count);
+  labelEl.textContent = count === 1 ? "endorsement made" : "endorsements made";
 }
 
 // Initialize popup
 document.addEventListener("DOMContentLoaded", async () => {
   await displayOwnKey();
-  await renderKeyring();
-  setupAddForm();
+  await displayEndorsementCount();
 });

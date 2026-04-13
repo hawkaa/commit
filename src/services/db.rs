@@ -157,7 +157,7 @@ impl Database {
             )?;
         }
 
-        // Migration: add endorser_key_hash column for network keyring queries.
+        // Migration: add endorser_key_hash column (revisit indicators, sentiment flips, sybil analysis).
         let has_endorser_key_hash: bool = self
             .conn
             .prepare("SELECT endorser_key_hash FROM endorsements LIMIT 0")
@@ -439,38 +439,6 @@ impl Database {
             params![subject_id.to_string()],
         )?;
         Ok(())
-    }
-
-    /// Count endorsements for a subject from endorsers matching any of the provided key hashes.
-    /// Only counts non-failed endorsements with a non-NULL `endorser_key_hash`.
-    pub fn count_network_endorsements(
-        &self,
-        subject_id: &Uuid,
-        key_hashes: &[String],
-    ) -> Result<u32> {
-        if key_hashes.is_empty() {
-            return Ok(0);
-        }
-        let placeholders: Vec<&str> = key_hashes.iter().map(|_| "?").collect();
-        let sql = format!(
-            "SELECT COUNT(*) FROM endorsements \
-             WHERE subject_id = ? AND status != 'failed' \
-             AND endorser_key_hash IN ({})",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-
-        // Bind subject_id first, then each key hash
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        param_values.push(Box::new(subject_id.to_string()));
-        for kh in key_hashes {
-            param_values.push(Box::new(kh.clone()));
-        }
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
-
-        let count: u32 = stmt.query_row(params_ref.as_slice(), |row| row.get(0))?;
-        Ok(count)
     }
 
     /// Returns pending attestations (no tx_hash) joined with their endorsement proof_hash.
