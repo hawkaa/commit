@@ -79,6 +79,7 @@ Do not deviate without explicit user approval.
 - [x] Commit Score v2 (Layer 1 + Layer 2) — see `docs/plans/2026-04-12-008-feat-commit-score-v2-plan.md`
 
 ### Phase 3 — Network + Launch (weeks 6-9)
+- [x] Trust page: add "Get extension" CTA (growth loop)
 - [ ] "N in your network endorse this" display
 - [ ] Access gate activation
 - [ ] Seed endorsements from founder
