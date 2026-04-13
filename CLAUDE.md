@@ -101,4 +101,7 @@ See CEO plan: `~/.gstack/projects/commit/ceo-plans/2026-04-12-phase3-one-network
 ```bash
 cargo test
 cargo clippy -- -D warnings
+cargo fmt --check
 ```
+
+All three gates must pass before pushing to `main`. CI (`.github/workflows/deploy.yml`) runs `cargo fmt --check` as part of the "Rust checks" job, and a failure there blocks the Fly.io auto-deploy. Run `cargo fmt` locally to fix formatting drift.
