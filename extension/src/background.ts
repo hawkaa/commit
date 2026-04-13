@@ -18,7 +18,8 @@ interface ProveResult {
   errorCode?: string;
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
+  // Generate keypair if missing (runs on install and update)
   const existing = await chrome.storage.local.get("keypair");
   if (!existing.keypair) {
     const keyPair = await crypto.subtle.generateKey(
@@ -37,6 +38,18 @@ chrome.runtime.onInstalled.addListener(async () => {
       },
     });
     console.log("[commit] Keypair generated on install");
+  }
+
+  // Open onboarding tab only on fresh install (not on update or chrome_update)
+  if (details.reason === "install") {
+    try {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL("onboarding.html"),
+      });
+      console.log("[commit] Onboarding tab opened");
+    } catch (err) {
+      console.error("[commit] Failed to open onboarding tab:", err);
+    }
   }
 });
 
