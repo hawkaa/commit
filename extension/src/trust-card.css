@@ -107,6 +107,39 @@
   margin-left: 4px;
 }
 
+/* Add badge CTA */
+.commit-add-badge {
+  font-family: 'Geist', -apple-system, system-ui, sans-serif;
+  font-size: 11px;
+  color: #888;
+  cursor: pointer;
+  margin-top: 2px;
+  display: inline-block;
+}
+
+.commit-add-badge:hover {
+  text-decoration: underline;
+}
+
+.commit-add-badge--done {
+  color: #16a34a;
+}
+
+.commit-badge-snippet {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  background: #f5f5f0;
+  color: #1a1a2e;
+  padding: 4px;
+  margin-top: 4px;
+  border-radius: 4px;
+  display: block;
+  user-select: all;
+  overflow-x: auto;
+  max-width: 100%;
+  word-break: break-all;
+}
+
 /* Endorse button */
 .commit-endorse-btn {
   font-family: 'Geist', -apple-system, system-ui, sans-serif;

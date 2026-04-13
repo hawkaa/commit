@@ -43,9 +43,17 @@ test("extension loads without errors", async () => {
     if (msg.type() === "error") swErrors.push(msg.text());
   });
 
-  // Check: trust card appeared on the page (or at least no crash)
+  // Check: trust card appeared on the page
   const trustCard = await page.$(".commit-trust-card");
   console.log(`Trust card found: ${!!trustCard}`);
+  test.skip(!trustCard, "no trust card — external dep unreachable");
+
+  // Check: "Add badge" CTA is present when trust card loads
+  const addBadge = await page.$(".commit-add-badge");
+  console.log(`Add badge CTA found: ${!!addBadge}`);
+  expect(addBadge).not.toBeNull();
+  const addBadgeText = await addBadge!.textContent();
+  expect(addBadgeText).toBe("Add badge");
 
   await context.close();
   expect(swErrors).toEqual([]);
