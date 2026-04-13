@@ -140,6 +140,35 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
     details.appendChild(zkLine);
   }
 
+  // "Add badge" clipboard CTA
+  const snippet = `[![Commit Score](${API_BASE}/badge/github/${subject.identifier}.svg)](${API_BASE}/trust/github/${subject.identifier})`;
+  const addBadge = document.createElement("span");
+  addBadge.className = "commit-add-badge";
+  addBadge.textContent = "Add badge";
+  addBadge.title = "Copy badge markdown to clipboard";
+  let fallbackEl: HTMLElement | null = null;
+  addBadge.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      addBadge.textContent = "Copied!";
+      addBadge.classList.add("commit-add-badge--done");
+      setTimeout(() => {
+        addBadge.textContent = "Add badge";
+        addBadge.classList.remove("commit-add-badge--done");
+      }, 1500);
+    } catch {
+      // Fallback: show selectable snippet inline (re-entrant safe)
+      if (!fallbackEl) {
+        fallbackEl = document.createElement("code");
+        fallbackEl.className = "commit-badge-snippet";
+        fallbackEl.textContent = snippet;
+        addBadge.parentElement?.appendChild(fallbackEl);
+      }
+      fallbackEl.style.display = "block";
+    }
+  });
+  details.appendChild(addBadge);
+
   const endorseBtn = document.createElement("button");
   endorseBtn.className = "commit-endorse-btn";
   endorseBtn.textContent = "Endorse";

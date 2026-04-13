@@ -47,6 +47,15 @@ test("extension loads without errors", async () => {
   const trustCard = await page.$(".commit-trust-card");
   console.log(`Trust card found: ${!!trustCard}`);
 
+  // Check: "Add badge" CTA is present when trust card loads
+  if (trustCard) {
+    const addBadge = await page.$(".commit-add-badge");
+    console.log(`Add badge CTA found: ${!!addBadge}`);
+    expect(addBadge).not.toBeNull();
+    const addBadgeText = await addBadge!.textContent();
+    expect(addBadgeText).toBe("Add badge");
+  }
+
   await context.close();
   expect(swErrors).toEqual([]);
 });
