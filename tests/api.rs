@@ -145,6 +145,54 @@ async fn trust_page_unimplemented_kind_returns_501() {
     resp.assert_status(axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
+#[tokio::test]
+async fn trust_page_includes_install_cta() {
+    let (server, state) = build_app();
+
+    // Seed a subject with cached signals so the trust page renders without GitHub API
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "cta-org/cta-repo".to_string(),
+            display_name: "cta-org/cta-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+        let stored = db
+            .find_subject(&SubjectKind::GithubRepo, "cta-org/cta-repo")
+            .unwrap()
+            .unwrap();
+        db.cache_signals(
+            &stored.id,
+            r#"[{"source":"registry","category":"longevity","label":"Age","value":"2yr","verification":"public_api","timestamp":"2024-01-01","confidence":0.9}]"#,
+            r#"{"score":42,"breakdown":{"longevity":7.0,"maintenance":5.0,"community":3.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+        )
+        .unwrap();
+    }
+
+    let resp = server.get("/trust/github/cta-org/cta-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    // CTA text is present
+    assert!(
+        body.contains("Get the Commit extension"),
+        "trust page should contain the install CTA text"
+    );
+
+    // CTA link opens in new tab with noopener
+    assert!(
+        body.contains(r#"target="_blank"#),
+        "CTA link should have target=_blank"
+    );
+    assert!(
+        body.contains(r#"rel="noopener""#),
+        "CTA link should have rel=noopener"
+    );
+}
+
 // --- Endorsement tests ---
 
 #[tokio::test]
