@@ -91,7 +91,7 @@ See CEO plan: `~/.gstack/projects/commit/ceo-plans/2026-04-12-phase3-one-network
 - [ ] "Not for me" negative endorsement signal (sentiment field, upsert, score impact)
 - [ ] "You endorsed this" revisit indicator (local cache)
 - [x] "Add badge to README" CTA on GitHub trust cards (clipboard)
-- [ ] Post-install onboarding page (closes growth loop conversion cliff)
+- [x] Post-install onboarding page (closes growth loop conversion cliff)
 - [ ] Design fixes: absolute badge URLs, install CTA, focus-visible, score animation (8 findings from design audit)
 - [ ] Seed endorsements from founder
 - [ ] Launch: HN, crypto Twitter, Rust community
