@@ -184,7 +184,7 @@ async fn trust_page_includes_install_cta() {
 
     // CTA link opens in new tab with noopener
     assert!(
-        body.contains(r#"target="_blank"#),
+        body.contains(r##"target="_blank""##),
         "CTA link should have target=_blank"
     );
     assert!(
