@@ -147,14 +147,19 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
   addBadge.textContent = "Add badge";
   addBadge.title = "Copy badge markdown to clipboard";
   let fallbackEl: HTMLElement | null = null;
+  let isCopying = false;
   addBadge.addEventListener("click", async () => {
+    if (isCopying) return;
+    isCopying = true;
     try {
       await navigator.clipboard.writeText(snippet);
+      if (fallbackEl) fallbackEl.style.display = "none";
       addBadge.textContent = "Copied!";
       addBadge.classList.add("commit-add-badge--done");
       setTimeout(() => {
         addBadge.textContent = "Add badge";
         addBadge.classList.remove("commit-add-badge--done");
+        isCopying = false;
       }, 1500);
     } catch {
       // Fallback: show selectable snippet inline (re-entrant safe)
@@ -165,6 +170,7 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
         addBadge.parentElement?.appendChild(fallbackEl);
       }
       fallbackEl.style.display = "block";
+      isCopying = false;
     }
   });
   details.appendChild(addBadge);
