@@ -20,24 +20,31 @@ interface ProveResult {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   // Generate keypair if missing (runs on install and update)
-  const existing = await chrome.storage.local.get("keypair");
-  if (!existing.keypair) {
-    const keyPair = await crypto.subtle.generateKey(
-      { name: "Ed25519" } as EcKeyGenParams,
-      true,
-      ["sign", "verify"]
-    );
-    const publicKey = await crypto.subtle.exportKey("raw", keyPair.publicKey);
-    const privateKey = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+  try {
+    const existing = await chrome.storage.local.get("keypair");
+    if (!existing.keypair) {
+      const keyPair = await crypto.subtle.generateKey(
+        { name: "Ed25519" } as EcKeyGenParams,
+        true,
+        ["sign", "verify"]
+      );
+      const publicKey = await crypto.subtle.exportKey("raw", keyPair.publicKey);
+      const privateKey = await crypto.subtle.exportKey(
+        "pkcs8",
+        keyPair.privateKey
+      );
 
-    await chrome.storage.local.set({
-      keypair: {
-        publicKey: Array.from(new Uint8Array(publicKey)),
-        privateKey: Array.from(new Uint8Array(privateKey)),
-        createdAt: new Date().toISOString(),
-      },
-    });
-    console.log("[commit] Keypair generated on install");
+      await chrome.storage.local.set({
+        keypair: {
+          publicKey: Array.from(new Uint8Array(publicKey)),
+          privateKey: Array.from(new Uint8Array(privateKey)),
+          createdAt: new Date().toISOString(),
+        },
+      });
+      console.log("[commit] Keypair generated on install");
+    }
+  } catch (err) {
+    console.error("[commit] keypair generation failed", err);
   }
 
   // Open onboarding tab only on fresh install (not on update or chrome_update)
@@ -48,7 +55,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       });
       console.log("[commit] Onboarding tab opened");
     } catch (err) {
-      console.error("[commit] Failed to open onboarding tab:", err);
+      console.error("[commit] onboarding tab open failed", err);
     }
   }
 });
