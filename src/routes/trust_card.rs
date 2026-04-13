@@ -41,15 +41,13 @@ fn map_endorsement_rows(
 
     rows.into_iter()
         .map(|r| {
-            let (on_chain, tx_hash) = attestation_map
-                .get(&r.id)
-                .map_or((false, None), |att| {
-                    if att.tx_hash.is_some() {
-                        (true, att.tx_hash.clone())
-                    } else {
-                        (false, None)
-                    }
-                });
+            let (on_chain, tx_hash) = attestation_map.get(&r.id).map_or((false, None), |att| {
+                if att.tx_hash.is_some() {
+                    (true, att.tx_hash.clone())
+                } else {
+                    (false, None)
+                }
+            });
             EndorsementSummary {
                 id: r.id,
                 category: r.category,
@@ -157,9 +155,7 @@ async fn get_github_trust_card(
         .get_endorsement_counts_by_status(&subject.id)
         .unwrap_or((0, 0));
     let score = if verified_count > 0 || pending_count > 0 {
-        let avg_tenure_months = db
-            .get_endorsement_tenure_months(&subject.id)
-            .unwrap_or(0.0);
+        let avg_tenure_months = db.get_endorsement_tenure_months(&subject.id).unwrap_or(0.0);
         score_github_repo_with_endorsements(
             &gh_repo,
             contributor_count,

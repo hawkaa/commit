@@ -1029,9 +1029,7 @@ async fn pending_attestation_appears_in_get_pending_attestations() {
         "should have at least one pending attestation"
     );
 
-    let found = pending
-        .iter()
-        .any(|p| !p.endorsement_proof_hash.is_empty());
+    let found = pending.iter().any(|p| !p.endorsement_proof_hash.is_empty());
     assert!(
         found,
         "pending attestation should have a non-empty proof hash"

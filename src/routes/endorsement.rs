@@ -163,15 +163,13 @@ pub async fn get_endorsements(
     let summaries: Vec<EndorsementSummary> = rows
         .into_iter()
         .map(|r| {
-            let (on_chain, tx_hash) = attestation_map
-                .get(&r.id)
-                .map_or((false, None), |att| {
-                    if att.tx_hash.is_some() {
-                        (true, att.tx_hash.clone())
-                    } else {
-                        (false, None)
-                    }
-                });
+            let (on_chain, tx_hash) = attestation_map.get(&r.id).map_or((false, None), |att| {
+                if att.tx_hash.is_some() {
+                    (true, att.tx_hash.clone())
+                } else {
+                    (false, None)
+                }
+            });
             EndorsementSummary {
                 id: r.id,
                 category: r.category,

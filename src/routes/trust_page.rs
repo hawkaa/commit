@@ -7,7 +7,9 @@ use crate::AppState;
 use crate::models::{
     CommitScore, CommitmentSignal, EndorsementSummary, ScoreBreakdown, Subject, SubjectKind,
 };
-use crate::services::score::{build_signals, score_github_repo, score_github_repo_with_endorsements};
+use crate::services::score::{
+    build_signals, score_github_repo, score_github_repo_with_endorsements,
+};
 use uuid::Uuid;
 
 // TODO: replace after CWS approval
@@ -100,9 +102,7 @@ async fn render_github_trust_page(
             .get_endorsement_counts_by_status(&subject.id)
             .unwrap_or((0, 0));
         let score = if verified_count > 0 || pending_count > 0 {
-            let avg_tenure_months = db
-                .get_endorsement_tenure_months(&subject.id)
-                .unwrap_or(0.0);
+            let avg_tenure_months = db.get_endorsement_tenure_months(&subject.id).unwrap_or(0.0);
             score_github_repo_with_endorsements(
                 &gh_repo,
                 contributor_count,
@@ -141,15 +141,13 @@ async fn render_github_trust_page(
         let summaries: Vec<EndorsementSummary> = rows
             .into_iter()
             .map(|r| {
-                let (on_chain, tx_hash) = attestation_map
-                    .get(&r.id)
-                    .map_or((false, None), |att| {
-                        if att.tx_hash.is_some() {
-                            (true, att.tx_hash.clone())
-                        } else {
-                            (false, None)
-                        }
-                    });
+                let (on_chain, tx_hash) = attestation_map.get(&r.id).map_or((false, None), |att| {
+                    if att.tx_hash.is_some() {
+                        (true, att.tx_hash.clone())
+                    } else {
+                        (false, None)
+                    }
+                });
                 EndorsementSummary {
                     id: r.id,
                     category: r.category,

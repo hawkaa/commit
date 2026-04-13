@@ -52,8 +52,8 @@ async fn main() {
     if let Ok(private_key) = std::env::var("L2_PRIVATE_KEY") {
         let contract_address = std::env::var("L2_CONTRACT_ADDRESS")
             .unwrap_or_else(|_| "0x08AE2e7fd94130645725Afc69e9BE2140f2395d7".to_string());
-        let rpc_url = std::env::var("L2_RPC_URL")
-            .unwrap_or_else(|_| "https://sepolia.base.org".to_string());
+        let rpc_url =
+            std::env::var("L2_RPC_URL").unwrap_or_else(|_| "https://sepolia.base.org".to_string());
         let interval_secs: u64 = std::env::var("L2_BATCH_INTERVAL_SECS")
             .ok()
             .and_then(|s| s.parse().ok())

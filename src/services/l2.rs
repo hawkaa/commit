@@ -136,11 +136,7 @@ pub struct PendingAttestation {
 /// database, submits them on-chain in batches, and updates the local records.
 ///
 /// Catches panics from the inner loop to prevent silent death of the task.
-pub async fn run_batch_submitter(
-    db: Arc<Mutex<Database>>,
-    l2: L2Client,
-    interval_secs: u64,
-) {
+pub async fn run_batch_submitter(db: Arc<Mutex<Database>>, l2: L2Client, interval_secs: u64) {
     loop {
         let result = run_batch_submitter_inner(&db, &l2, interval_secs).await;
         match result {
@@ -148,9 +144,7 @@ pub async fn run_batch_submitter(
                 tracing::error!("L2 batch submitter exited unexpectedly — restarting in 60s");
             }
             Err(e) => {
-                tracing::error!(
-                    "L2 batch submitter panicked: {e} — restarting in 60s"
-                );
+                tracing::error!("L2 batch submitter panicked: {e} — restarting in 60s");
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
@@ -174,10 +168,7 @@ async fn run_batch_submitter_inner(
     }
 }
 
-async fn process_pending_batch(
-    db: &Arc<Mutex<Database>>,
-    l2: &L2Client,
-) -> Result<(), String> {
+async fn process_pending_batch(db: &Arc<Mutex<Database>>, l2: &L2Client) -> Result<(), String> {
     let pending = {
         let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         db.get_pending_attestations(BATCH_SIZE as u32)
@@ -240,9 +231,7 @@ async fn process_pending_batch(
     let (tx_hash_confirmed, block_number) = match l2.wait_for_receipt(&tx_hash).await {
         Ok(receipt) => receipt,
         Err(e) => {
-            tracing::warn!(
-                "Could not get receipt for {tx_hash}: {e} — will retry next cycle"
-            );
+            tracing::warn!("Could not get receipt for {tx_hash}: {e} — will retry next cycle");
             // Leave attestations as pending; they will be retried
             return Ok(());
         }
@@ -251,8 +240,7 @@ async fn process_pending_batch(
     // Update all attestation rows with tx_hash and block_number
     let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
     for att_id in &attestation_ids {
-        let uid =
-            Uuid::parse_str(att_id).map_err(|e| format!("Invalid attestation UUID: {e}"))?;
+        let uid = Uuid::parse_str(att_id).map_err(|e| format!("Invalid attestation UUID: {e}"))?;
         db.update_attestation_tx(&uid, &tx_hash_confirmed, block_number as i64)
             .map_err(|e| format!("DB error updating attestation {att_id}: {e}"))?;
     }
@@ -278,8 +266,7 @@ async fn submit_items_individually(
     attestation_ids: &[String],
 ) -> Result<(), String> {
     for (i, att_id) in attestation_ids.iter().enumerate() {
-        let uid =
-            Uuid::parse_str(att_id).map_err(|e| format!("Invalid attestation UUID: {e}"))?;
+        let uid = Uuid::parse_str(att_id).map_err(|e| format!("Invalid attestation UUID: {e}"))?;
         let single_eid = std::slice::from_ref(&endorsement_ids[i]);
         let single_ph = std::slice::from_ref(&proof_hashes[i]);
 
@@ -290,9 +277,7 @@ async fn submit_items_individually(
                     Ok((tx_hash_confirmed, block_number)) => {
                         let db = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
                         db.update_attestation_tx(&uid, &tx_hash_confirmed, block_number as i64)
-                            .map_err(|e| {
-                                format!("DB error updating attestation {att_id}: {e}")
-                            })?;
+                            .map_err(|e| format!("DB error updating attestation {att_id}: {e}"))?;
                         tracing::info!(
                             "Single-item submit succeeded for attestation {} (endorsement {}) tx={}",
                             att_id,
@@ -360,6 +345,9 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         uuid_bytes.copy_from_slice(&bytes[16..]);
         let reconstructed = Uuid::from_bytes(uuid_bytes);
-        assert_eq!(reconstructed, original, "round-trip must produce the same UUID");
+        assert_eq!(
+            reconstructed, original,
+            "round-trip must produce the same UUID"
+        );
     }
 }
