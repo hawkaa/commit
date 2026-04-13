@@ -77,79 +77,38 @@ body {
   font-size: 10px;
 }
 
-.popup-btn--danger {
-  background: transparent;
-  color: #dc2626;
-  border: 1px solid #dc2626;
-  padding: 2px 6px;
-  font-size: 10px;
-}
-
-.popup-btn--danger:hover {
-  background: #dc2626;
-  color: #ffffff;
-}
-
-.keyring-list {
-  margin-bottom: 8px;
-}
-
-.keyring-entry {
+.activity-count {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  align-items: baseline;
+  gap: 6px;
   background: #ffffff;
   border: 1px solid #e5e5e0;
   border-radius: 6px;
-  margin-bottom: 4px;
+  padding: 8px;
 }
 
-.keyring-label {
-  font-weight: 600;
+.activity-figure {
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #1a1a2e;
+}
+
+.activity-label {
+  font-size: 13px;
+  color: #666666;
+}
+
+.popup-about-link {
+  display: block;
   font-size: 12px;
-  flex-shrink: 0;
-}
-
-.keyring-key {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
   color: #888888;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.keyring-empty {
-  color: #888888;
-  font-size: 12px;
-  font-style: italic;
+  text-decoration: none;
+  text-align: center;
   padding: 4px 0;
 }
 
-.keyring-add {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.popup-input {
-  background: #ffffff;
-  border: 1px solid #e5e5e0;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
-  font-family: inherit;
+.popup-about-link:hover {
   color: #1a1a2e;
-  outline: none;
-}
-
-.popup-input:focus {
-  border-color: #16a34a;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
-}
-
-.popup-input::placeholder {
-  color: #888888;
+  text-decoration: underline;
 }
