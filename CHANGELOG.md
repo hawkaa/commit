@@ -2,6 +2,42 @@
 
 All notable changes to Commit will be documented in this file.
 
+## [0.2.0.0] - 2026-04-13
+
+Phase 3 sprint: "Endorse Everywhere + Launch" — parallel-worktree execution of four feature plans. Shipped 4 user-facing features plus the code-level realization of the 2026-04-12 one-network decision. 27 commits across backend + extension.
+
+### Added
+- Post-install onboarding page (`extension/src/onboarding.html`) opens on fresh extension install with a primary CTA to visit a GitHub repo. Webpack `CopyWebpackPlugin` entry emits it to `extension/build/onboarding.html` at build time.
+- "Get the Commit extension" install CTA on the SSR trust page (`src/routes/trust_page.rs`), positioned between the endorsements card and the badge section. Links to the Chrome Web Store (URL is a placeholder until CWS approval — tagged with a TODO in `CHROME_WEBSTORE_URL`).
+- "Add badge" clipboard CTA on the extension-injected GitHub trust card (`extension/src/content-github.ts`, `trust-card.css`). Copies a Markdown snippet with absolute `API_BASE` URLs; falls back to a `user-select: all` code block when `navigator.clipboard.writeText` is unavailable. Re-entrant click guard prevents race during the "Copied!" flash window.
+- Orphaned `chrome.storage.local.keyring` cleanup on extension update (`chrome.runtime.onInstalled` `reason === "update"` branch) — removes leftover data from the deprecated personal keyring model.
+- `network_query_endpoint_removed` regression test in `tests/api.rs` that asserts `POST /network-query` returns `404` — locks in the one-network model at the API layer.
+- Extension popup now shows a local endorsement counter (`chrome.storage.local.endorsement_count`), incremented after successful `POST /endorsements` calls.
+- Design-spec-compliant Playwright smoke assertions for the "Add badge" CTA and the onboarding tab open on `reason === "install"`.
+
+### Changed
+- **Product model:** "One global network" is now the code-level reality, replacing the personal friend-graph framing. "N endorse this" = N verified humans, not N of a user's friends. ZK anonymity is the trust primitive.
+- Extension popup (`extension/src/popup.{ts,html,css}`) rewritten from keyring management to a minimal status card: truncated public key (with copy-to-clipboard) + endorsement count + "About Commit" link.
+- `chrome.runtime.onInstalled` listener now accepts the `details` argument. Keypair generation and the onboarding tab open are wrapped in independent `try/catch` blocks so one concern never blocks the other.
+- Onboarding page outbound links carry `rel="noopener noreferrer"` (defense-in-depth for extension pages linking to external origins).
+- Playwright onboarding detection uses deterministic `context.waitForEvent('page')` + `context.pages()` scan instead of a busy-wait polling loop.
+- Phase 3 checklist in `CLAUDE.md` restructured around the "Endorse Everywhere + Launch" scope from the 2026-04-12 CEO plan. Phase 2 hardening backlog marked fully complete.
+- Design doc `NetworkMembership` entity explicitly noted as superseded by the one-network decision.
+
+### Fixed
+- Endorsement counter storage failure (`chrome.storage.local.set` rejection) no longer masks a successful endorsement as a `Network error` response to the caller. Counter is now best-effort inside its own inner `try/catch`.
+- "Add badge" CTA re-entrancy: double-clicking during the 1500ms "Copied!" window no longer queues duplicate clipboard writes or races between the success `setTimeout` and a late-arriving `catch` fallback.
+- Stale fallback block on "Add badge" CTA is now hidden when a subsequent copy succeeds (was previously left visible indefinitely).
+- Test assertion for `target="_blank"` in the trust page CTA now uses a raw-string delimiter (`r##"..."##`) that correctly matches the full attribute value instead of a prefix-only substring.
+- Playwright smoke test now fails loud (`test.skip` with reason) when the GitHub trust card is absent, instead of silently passing with zero coverage of the new `.commit-add-badge` assertion.
+
+### Removed
+- `POST /network-query` endpoint (`src/routes/network.rs` deleted, route registration in `src/main.rs` removed, `pub mod network` line dropped from `src/routes/mod.rs`).
+- `count_network_endorsements` method in `src/services/db.rs` and the 10 `network_query_*` integration tests in `tests/api.rs` (plus `setup_network_test_data` helper).
+- `NETWORK_QUERY` / `KEYRING_ADD` / `KEYRING_REMOVE` message handlers, `keyringMutex`, `handleKeyringAdd`, `handleKeyringRemove`, and `handleNetworkQuery` in the extension service worker.
+- `NetworkData` interface, `network_data` field on `TrustCardData`, and the `NETWORK_QUERY` call block in the GitHub content script.
+- Personal keyring UI (friend list + "Add to network" form) and associated CSS classes (`.keyring-list`, `.keyring-entry`, `.keyring-add`, `.popup-input`, `.popup-btn--danger`) in the extension popup.
+
 ## [0.1.3.0] - 2026-04-12
 
 ### Added
