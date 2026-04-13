@@ -10,11 +10,6 @@ interface EndorsementSummary {
   created_at: string;
 }
 
-interface NetworkData {
-  network: number;
-  total: number;
-}
-
 interface TrustCardData {
   subject: { identifier: string; display_name: string };
   score: {
@@ -32,7 +27,6 @@ interface TrustCardData {
   };
   endorsement_count: number;
   recent_endorsements: EndorsementSummary[];
-  network_data?: NetworkData | null;
 }
 
 async function injectTrustCard(): Promise<void> {
@@ -280,20 +274,6 @@ async function fetchTrustCard(
     await chrome.storage.local.set({
       [cacheKey]: { data, timestamp: Date.now() },
     });
-  }
-
-  // Query network endorsements fresh every time (not cached — depends on user's keyring)
-  try {
-    const networkData = await chrome.runtime.sendMessage({
-      type: "NETWORK_QUERY",
-      subjectKind: kind,
-      subjectId: id,
-    });
-    if (networkData && data) {
-      data.network_data = networkData as NetworkData;
-    }
-  } catch {
-    // Network query is non-critical; proceed without it
   }
 
   return data;
