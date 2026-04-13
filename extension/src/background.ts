@@ -18,7 +18,7 @@ interface ProveResult {
   errorCode?: string;
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   const existing = await chrome.storage.local.get("keypair");
   if (!existing.keypair) {
     const keyPair = await crypto.subtle.generateKey(
@@ -37,6 +37,15 @@ chrome.runtime.onInstalled.addListener(async () => {
       },
     });
     console.log("[commit] Keypair generated on install");
+  }
+
+  // Remove orphaned data from the old keyring model
+  if (details.reason === "update") {
+    try {
+      await chrome.storage.local.remove("keyring");
+    } catch {
+      // best-effort cleanup
+    }
   }
 });
 
