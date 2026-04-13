@@ -157,7 +157,7 @@ impl Database {
             )?;
         }
 
-        // Migration: add endorser_key_hash column for network keyring queries.
+        // Migration: add endorser_key_hash column (revisit indicators, sentiment flips, sybil analysis).
         let has_endorser_key_hash: bool = self
             .conn
             .prepare("SELECT endorser_key_hash FROM endorsements LIMIT 0")
