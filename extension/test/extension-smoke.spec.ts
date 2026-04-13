@@ -29,14 +29,19 @@ test("extension loads without errors and opens onboarding on install", async () 
   }
 
   // Wait for the onboarding tab to open (onInstalled fires reason: "install")
-  // Give up to 5 seconds for the tab to appear
+  // Check existing pages first (tab may already exist if onInstalled fired
+  // before we subscribed), then fall back to waitForEvent.
   let onboardingPage: import("@playwright/test").Page | undefined;
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline) {
-    const pages = context.pages();
-    onboardingPage = pages.find((p) => p.url().includes("onboarding.html"));
-    if (onboardingPage) break;
-    await new Promise((r) => setTimeout(r, 200));
+  onboardingPage = context
+    .pages()
+    .find((p) => p.url().includes("onboarding.html"));
+
+  if (!onboardingPage) {
+    const newPage = await context.waitForEvent("page", {
+      predicate: (p) => p.url().includes("onboarding.html"),
+      timeout: 5000,
+    });
+    onboardingPage = newPage;
   }
 
   expect(onboardingPage).toBeDefined();
