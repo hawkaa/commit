@@ -1,6 +1,7 @@
 ---
 title: Parallel feature development with git worktree agents
 date: 2026-04-12
+last_refreshed: 2026-04-13
 category: best-practices
 module: development_workflow
 problem_type: best_practice
@@ -22,6 +23,7 @@ tags:
   - code-review
   - rust
   - claude-code
+  - ci-gate-parity
 ---
 
 # Parallel feature development with git worktree agents
@@ -57,12 +59,16 @@ The minor overlap on `endorsement.rs` was assessed as trivial (one adds a field,
 Each dispatched agent has no memory of the planning conversation. Every prompt must include:
 
 - The path to the plan file (agents read it themselves)
-- Test commands (`cargo test`, `cargo clippy -- -D warnings`)
+- Test commands that **mirror the full CI gate list**, not a local subset. For this project: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` (matching `.github/workflows/deploy.yml`'s "Rust checks" job).
 - Stack description (language, framework, key constraints)
 - Implementation guidelines specific to that branch
 - Instructions to commit each unit with conventional commit messages
 
 Agents that receive incomplete context produce incomplete or incorrect results.
+
+**CI gate parity is non-negotiable.** Before dispatching prompts, diff the test commands you're about to include against every step in the CI workflow's test job. Any gate present in CI but absent from the prompt will be missed by every parallel agent, and the cost scales linearly with the number of agents dispatched. See [auto-memory-not-consulted-in-parallel-worktree-sprint-2026-04-13.md](../workflow-issues/auto-memory-not-consulted-in-parallel-worktree-sprint-2026-04-13.md) for a concrete incident where this gap silently broke CI for ~24 hours across a 4-branch parallel sprint.
+
+**Also check auto memory before dispatch.** If the project has a Claude Code auto memory directory (`~/.claude/projects/<project>/memory/`), scan feedback entries for quality standards that may not yet appear in CLAUDE.md. Feedback memories can carry workflow requirements that pre-date repo-level docs.
 
 ### 4. Dispatch all agents simultaneously, then wait
 
@@ -122,6 +128,7 @@ Each phase dispatched all agents simultaneously. The orchestrator waited for com
 
 ## Related
 
+- `docs/solutions/workflow-issues/auto-memory-not-consulted-in-parallel-worktree-sprint-2026-04-13.md` — the gate-parity incident that prompted the section 3 amendment above. A 4-branch parallel sprint silently broke CI for ~24 hours because dispatched agent prompts ran `cargo test` + `cargo clippy` without `cargo fmt --check`.
 - `docs/plans/2026-04-12-005-fix-security-hardening-batch-plan.md` — a plan whose 5 units were designed for parallel execution (same parallelizability reasoning applied within a single plan)
 - `docs/plans/2026-04-12-006-feat-network-keyring-key-sharing-plan.md` — one of the three plans executed in this parallel sprint
 - `docs/plans/2026-04-12-007-feat-l2-attestation-submission-plan.md` — one of the three plans executed in this parallel sprint
