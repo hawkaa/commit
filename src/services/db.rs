@@ -38,8 +38,8 @@ pub struct EndorsementRow {
     pub category: String,
     pub proof_hash: Vec<u8>,
     pub proof_type: String,
-    pub status: String,
     pub sentiment: String,
+    pub status: String,
     pub created_at: String,
 }
 

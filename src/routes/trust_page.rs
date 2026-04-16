@@ -15,6 +15,8 @@ use uuid::Uuid;
 // TODO: replace after CWS approval
 const CHROME_WEBSTORE_URL: &str = "https://chromewebstore.google.com/";
 
+const DEFAULT_PUBLIC_URL: &str = "https://commit-backend.fly.dev";
+
 #[allow(clippy::missing_errors_doc)]
 pub async fn get_trust_page(
     State(state): State<AppState>,
@@ -212,7 +214,8 @@ fn render_html(
     endorsement_count: u32,
     recent_endorsements: &[EndorsementSummary],
 ) -> String {
-    let (color_start, color_end) = score_color(score.score);
+    let public_url = std::env::var("PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_string());
+    let (color_start, _color_end) = score_color(score.score);
     let score_text = score_display(score.score);
     let owner = html_escape(owner);
     let repo = html_escape(repo);
@@ -248,6 +251,12 @@ fn render_html(
 
     let cta_url = CHROME_WEBSTORE_URL;
 
+    // SVG score arc geometry
+    let radius: f64 = 30.0; // inner radius for stroke ring (72px circle - stroke offset)
+    let circumference = 2.0 * std::f64::consts::PI * radius;
+    let score_fraction = score.score.map_or(0.0, |s| f64::from(s) / 100.0);
+    let dash_offset = circumference * (1.0 - score_fraction);
+
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -259,7 +268,7 @@ fn render_html(
   <meta property="og:title" content="{title}">
   <meta property="og:description" content="{description}">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="https://commit-backend.fly.dev/badge/github/{owner}/{repo}.svg">
+  <meta property="og:image" content="{public_url}/badge/github/{owner}/{repo}.svg">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="{title}">
   <meta name="twitter:description" content="{description}">
@@ -303,18 +312,43 @@ fn render_html(
     .score-circle {{
       width: 72px;
       height: 72px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, {color_start}, {color_end});
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      position: relative;
       flex-shrink: 0;
     }}
+    .score-circle svg {{
+      width: 72px;
+      height: 72px;
+      transform: rotate(-90deg);
+    }}
+    .score-track {{
+      fill: none;
+      stroke: #e5e5e0;
+      stroke-width: 6;
+    }}
+    .score-arc {{
+      fill: none;
+      stroke-width: 6;
+      stroke-linecap: round;
+      animation: score-fill 400ms ease-out forwards;
+    }}
     .score-number {{
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       font-family: 'Geist', sans-serif;
       font-weight: 800;
       font-size: 28px;
-      color: #fff;
+      color: #1a1a2e;
+      animation: fade-in 400ms ease-out;
+    }}
+    @keyframes fade-in {{
+      from {{ opacity: 0; }}
+      to {{ opacity: 1; }}
+    }}
+    @media (prefers-reduced-motion: reduce) {{
+      .score-arc {{ animation: none; }}
+      .score-number {{ animation: none; }}
     }}
     .hero-text h1 {{
       font-size: 20px;
@@ -505,6 +539,10 @@ fn render_html(
       color: #888;
       padding: 8px 0;
     }}
+    .install-cta-empty {{
+      display: inline-block;
+      margin-top: 8px;
+    }}
     .install-cta {{
       background: #fff;
       border: 1px solid #e5e5e0;
@@ -542,9 +580,10 @@ fn render_html(
     .install-cta-btn:hover {{
       opacity: 0.9;
     }}
-    .install-cta-btn:focus-visible {{
+    a:focus-visible, button:focus-visible {{
       outline: 2px solid #16a34a;
       outline-offset: 2px;
+      border-radius: 2px;
     }}
     .badge-section {{
       margin-top: 32px;
@@ -557,6 +596,11 @@ fn render_html(
     .badge-preview {{
       margin-bottom: 16px;
     }}
+    .badge-code-wrapper {{
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }}
     .badge-code {{
       font-family: 'JetBrains Mono', monospace;
       font-size: 12px;
@@ -565,7 +609,22 @@ fn render_html(
       border-radius: 6px;
       overflow-x: auto;
       color: #666;
-      user-select: all;
+      flex: 1;
+    }}
+    .copy-btn {{
+      background: #1a1a2e;
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }}
+    .copy-btn:hover {{
+      opacity: 0.9;
     }}
     .footer {{
       margin-top: 48px;
@@ -581,7 +640,7 @@ fn render_html(
       text-decoration: none;
     }}
     .footer a:hover {{ color: #1a1a2e; }}
-    @media (max-width: 480px) {{
+    @media (max-width: 375px) {{
       .container {{ padding: 24px 16px; }}
       .hero {{ gap: 16px; }}
       .score-circle {{ width: 56px; height: 56px; }}
@@ -596,13 +655,23 @@ fn render_html(
 <body>
   <div class="container">
     <div class="header">
-      <a href="/">commit</a>
+      <span>commit</span>
       <span class="sep">/</span>
       <a href="/trust/github/{owner}/{repo}">github/{owner}/{repo}</a>
     </div>
 
+    <style>
+      @keyframes score-fill {{
+        from {{ stroke-dashoffset: {circumference}; }}
+        to {{ stroke-dashoffset: {dash_offset}; }}
+      }}
+    </style>
     <div class="hero">
       <div class="score-circle">
+        <svg viewBox="0 0 72 72">
+          <circle class="score-track" cx="36" cy="36" r="{radius}" />
+          <circle class="score-arc" cx="36" cy="36" r="{radius}" stroke="{color_start}" stroke-dasharray="{circumference}" stroke-dashoffset="{dash_offset}" />
+        </svg>
         <span class="score-number">{score_text}</span>
       </div>
       <div class="hero-text">
@@ -640,14 +709,43 @@ fn render_html(
       <div class="badge-preview">
         <img src="/badge/github/{owner}/{repo}.svg" alt="Commit Score" height="20">
       </div>
-      <div class="badge-code">[![Commit Score](/badge/github/{owner}/{repo}.svg)](/trust/github/{owner}/{repo})</div>
+      <div class="badge-code-wrapper">
+        <div class="badge-code" id="badge-code">[![Commit Score]({public_url}/badge/github/{owner}/{repo}.svg)]({public_url}/trust/github/{owner}/{repo})</div>
+        <button type="button" class="copy-btn" data-copy-target="badge-code">Copy</button>
+      </div>
     </div>
 
     <div class="footer">
       <span>Commit Score (beta) — based on public data. Endorse this repo to improve accuracy.</span>
-      <a href="https://github.com/hawkaa/commit">GitHub</a>
+      <a href="https://github.com/getcommit-dev/commit">GitHub</a>
     </div>
   </div>
+  <script>
+    document.querySelectorAll('[data-copy-target]').forEach(function(btn) {{
+      btn.addEventListener('click', function() {{
+        var targetId = btn.getAttribute('data-copy-target');
+        var el = document.getElementById(targetId);
+        if (!el) return;
+        var text = el.textContent;
+        var orig = btn.textContent;
+        function done() {{ btn.textContent = 'Copied!'; setTimeout(function() {{ btn.textContent = orig; }}, 1500); }}
+        if (navigator.clipboard && navigator.clipboard.writeText) {{
+          navigator.clipboard.writeText(text).then(done).catch(function() {{
+            fallbackCopy(text); done();
+          }});
+        }} else {{
+          fallbackCopy(text); done();
+        }}
+      }});
+    }});
+    function fallbackCopy(text) {{
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      try {{ document.execCommand('copy'); }} catch(e) {{}}
+      document.body.removeChild(ta);
+    }}
+  </script>
 </body>
 </html>"#
     )
@@ -660,8 +758,14 @@ fn render_endorsements_section(count: u32, endorsements: &[EndorsementSummary]) 
         "Endorsements".to_string()
     };
 
+    let cta_url = CHROME_WEBSTORE_URL;
     let body = if endorsements.is_empty() {
-        r#"<div class="endorsement-empty">No endorsements yet. Install the Commit extension to endorse this repo.</div>"#.to_string()
+        format!(
+            r#"<div class="endorsement-empty">
+        <p>No endorsements yet.</p>
+        <a href="{cta_url}" target="_blank" rel="noopener" class="install-cta-btn install-cta-empty">Install the Commit extension to endorse</a>
+      </div>"#
+        )
     } else {
         let rows: String = endorsements
             .iter()

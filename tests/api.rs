@@ -1641,3 +1641,188 @@ async fn network_query_endpoint_removed() {
         .await;
     resp.assert_status(axum::http::StatusCode::NOT_FOUND);
 }
+
+// --- Design audit batch tests ---
+
+fn seed_trust_page(state: &AppState, org: &str, repo: &str) {
+    let db = state.db.lock().unwrap();
+    let identifier = format!("{org}/{repo}");
+    let subject = Subject {
+        id: Uuid::new_v4(),
+        kind: SubjectKind::GithubRepo,
+        identifier: identifier.clone(),
+        display_name: identifier.clone(),
+        endorsement_count: 0,
+    };
+    db.upsert_subject(&subject).unwrap();
+    let stored = db
+        .find_subject(&SubjectKind::GithubRepo, &identifier)
+        .unwrap()
+        .unwrap();
+    db.cache_signals(
+        &stored.id,
+        r#"[{"source":"registry","category":"longevity","label":"Age","value":"2yr","verification":"public_api","timestamp":"2024-01-01","confidence":0.9}]"#,
+        r#"{"score":42,"breakdown":{"longevity":7.0,"maintenance":5.0,"community":3.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn trust_page_badge_markdown_uses_absolute_urls() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "badge-org", "badge-repo");
+
+    let resp = server.get("/trust/github/badge-org/badge-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        body.contains("https://commit-backend.fly.dev/badge/github/badge-org/badge-repo.svg"),
+        "badge markdown should use absolute URL for image"
+    );
+    assert!(
+        body.contains("https://commit-backend.fly.dev/trust/github/badge-org/badge-repo"),
+        "badge markdown should use absolute URL for link"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_empty_state_has_install_button() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "empty-org", "empty-repo");
+
+    let resp = server.get("/trust/github/empty-org/empty-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        body.contains("install-cta-btn install-cta-empty"),
+        "empty endorsement state should have an install-cta-btn"
+    );
+    assert!(
+        body.contains("Install the Commit extension to endorse"),
+        "empty state should have install button text"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_has_copy_button() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "copy-org", "copy-repo");
+
+    let resp = server.get("/trust/github/copy-org/copy-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        body.contains("copy-btn"),
+        "trust page should have a copy button"
+    );
+    assert!(
+        body.contains("data-copy-target"),
+        "copy button should have data-copy-target attribute"
+    );
+    assert!(
+        !body.contains("user-select: all"),
+        "badge code should not use user-select: all"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_no_hawkaa_in_footer() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "footer-org", "footer-repo");
+
+    let resp = server.get("/trust/github/footer-org/footer-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        !body.contains("hawkaa/commit"),
+        "footer should not contain personal hawkaa/commit link"
+    );
+    assert!(
+        body.contains("getcommit-dev/commit"),
+        "footer should link to getcommit-dev/commit"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_breadcrumb_no_root_link() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "bc-org", "bc-repo");
+
+    let resp = server.get("/trust/github/bc-org/bc-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        !body.contains(r#"href="/""#),
+        "breadcrumb should not have a link to /"
+    );
+    assert!(
+        body.contains("commit"),
+        "breadcrumb should still contain the word commit"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_mobile_breakpoint_375() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "mobile-org", "mobile-repo");
+
+    let resp = server.get("/trust/github/mobile-org/mobile-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        body.contains("max-width: 375px"),
+        "should use 375px mobile breakpoint"
+    );
+    assert!(
+        !body.contains("max-width: 480px"),
+        "should not use 480px mobile breakpoint"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_has_score_animation() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "anim-org", "anim-repo");
+
+    let resp = server.get("/trust/github/anim-org/anim-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        body.contains("@keyframes score-fill"),
+        "should have score-fill keyframes"
+    );
+    assert!(
+        body.contains("prefers-reduced-motion"),
+        "should have prefers-reduced-motion guard"
+    );
+    assert!(
+        body.contains("score-arc"),
+        "should have score arc SVG element"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_focus_visible_rule() {
+    let (server, state) = build_app();
+    seed_trust_page(&state, "focus-org", "focus-repo");
+
+    let resp = server.get("/trust/github/focus-org/focus-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+
+    assert!(
+        body.contains("a:focus-visible"),
+        "should have focus-visible rule for links"
+    );
+    assert!(
+        body.contains("button:focus-visible"),
+        "should have focus-visible rule for buttons"
+    );
+}
