@@ -84,6 +84,103 @@ test("extension loads without errors and opens onboarding on install", async () 
   expect(swErrors).toEqual([]);
 });
 
+test("endorsed-subjects cache drives revisit indicator on trust card", async () => {
+  test.setTimeout(30000);
+  const context = await launchWithExtension();
+
+  let sw = context.serviceWorkers()[0];
+  if (!sw) {
+    sw = await context.waitForEvent("serviceworker", { timeout: 10000 });
+  }
+
+  const page = await context.newPage();
+  await page.goto("https://github.com/nickel-org/nickel.rs", {
+    waitUntil: "domcontentloaded",
+  });
+  await page.waitForTimeout(3000);
+
+  const trustCard = await page.$(".commit-trust-card");
+  test.skip(!trustCard, "no trust card — external dep unreachable");
+
+  // Initial state: default buttons, no indicator
+  const endorseBtn = await page.$(".commit-endorse-btn");
+  expect(endorseBtn).not.toBeNull();
+  const initialText = await endorseBtn!.textContent();
+  expect(initialText).toBe("Endorse");
+
+  // Simulate a cached positive endorsement by writing directly to storage
+  // via the service worker's chrome.storage.local
+  await sw.evaluate(() => {
+    return chrome.storage.local.set({
+      endorsed_subjects: {
+        "github:nickel-org/nickel.rs": {
+          sentiment: "positive",
+          timestamp: Date.now(),
+        },
+      },
+    });
+  });
+
+  // Reload and verify the revisit indicator renders
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3000);
+
+  const trustCard2 = await page.$(".commit-trust-card");
+  test.skip(!trustCard2, "no trust card after reload — external dep unreachable");
+
+  // The primary button should now be a muted "Endorsed ✓" indicator
+  const indicatorBtn = await page.$(".commit-endorse-indicator");
+  expect(indicatorBtn).not.toBeNull();
+  const indicatorText = await indicatorBtn!.textContent();
+  expect(indicatorText).toContain("Endorsed");
+
+  // The "Not for me" secondary button should still be active (not disabled)
+  const notForMe = await page.$(".commit-endorse-secondary");
+  expect(notForMe).not.toBeNull();
+  const isDisabled = await notForMe!.isDisabled();
+  expect(isDisabled).toBe(false);
+
+  // Verify endorsed_subjects key coexists with keypair (namespace isolation)
+  const storageKeys = await sw.evaluate(async () => {
+    const all = await chrome.storage.local.get(null);
+    return Object.keys(all);
+  });
+  expect(storageKeys).toContain("keypair");
+  expect(storageKeys).toContain("endorsed_subjects");
+
+  // Now flip to negative and verify
+  await sw.evaluate(() => {
+    return chrome.storage.local.set({
+      endorsed_subjects: {
+        "github:nickel-org/nickel.rs": {
+          sentiment: "negative",
+          timestamp: Date.now(),
+        },
+      },
+    });
+  });
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3000);
+
+  const trustCard3 = await page.$(".commit-trust-card");
+  test.skip(!trustCard3, "no trust card after flip reload — external dep unreachable");
+
+  // The secondary "Not for me" should now be the muted indicator
+  const negIndicator = await page.$(".commit-endorse-secondary.commit-endorse-indicator");
+  expect(negIndicator).not.toBeNull();
+  const negText = await negIndicator!.textContent();
+  expect(negText).toContain("Not for me");
+
+  // The primary "Endorse" button should be active for re-flipping
+  const endorseActive = await page.$(".commit-endorse-btn");
+  expect(endorseActive).not.toBeNull();
+  const endorseDisabled = await endorseActive!.isDisabled();
+  expect(endorseDisabled).toBe(false);
+
+  await context.close();
+});
+
 test("offscreen WASM initializes without errors", async () => {
   test.setTimeout(60000);
   const context = await launchWithExtension();

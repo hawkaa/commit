@@ -3,6 +3,7 @@
 // Note: "Not for me" negative endorsement is intentionally NOT shown on SERP cards.
 // Too little context on SERP for a negative signal (CEO decision, Phase 3).
 import { API_BASE, CACHE_TTL_MS } from "./config";
+import { getEndorsement } from "./endorsed-cache";
 
 interface SerpTrustCardData {
   subject: { identifier: string };
@@ -24,7 +25,14 @@ async function injectSerp(): Promise<void> {
       const data = await fetchTrustCard("github", repoId);
       if (!data || !data.score.score) continue;
 
-      const card = createSerpCard(data);
+      // Read endorsed-subjects cache (best-effort — null on failure)
+      let cached: import("./endorsed-cache").EndorsedEntry | null = null;
+      try {
+        cached = await getEndorsement("github", repoId);
+      } catch {
+        // Cache read failure is a silent miss
+      }
+      const card = createSerpCard(data, cached);
       const snippet = result.querySelector("[data-sncf], .VwiC3b, .IsZvec");
       if (snippet && snippet.parentNode) {
         snippet.parentNode.insertBefore(card, snippet.nextSibling);
@@ -47,7 +55,10 @@ function extractGithubRepo(url: string): string | null {
   }
 }
 
-function createSerpCard(data: SerpTrustCardData): HTMLDivElement {
+function createSerpCard(
+  data: SerpTrustCardData,
+  cachedEndorsement: import("./endorsed-cache").EndorsedEntry | null
+): HTMLDivElement {
   const { subject, score } = data;
   const scoreValue = score.score!;
   const tier = scoreValue > 70 ? "high" : scoreValue > 40 ? "mid" : "none";
@@ -76,6 +87,18 @@ function createSerpCard(data: SerpTrustCardData): HTMLDivElement {
   strong.style.color = "#1a1a2e";
   strong.textContent = `Commit Score ${scoreValue}`;
   meta.appendChild(strong);
+
+  // Show muted revisit indicator next to score if cached
+  if (cachedEndorsement) {
+    const indicator = document.createElement("span");
+    indicator.className = "commit-endorse-indicator";
+    indicator.style.cssText = "font-size: 10px; color: #888; margin-left: 8px;";
+    indicator.textContent =
+      cachedEndorsement.sentiment === "positive"
+        ? "Endorsed \u2713"
+        : "Not for me \u2713";
+    meta.appendChild(indicator);
+  }
 
   card.appendChild(circle);
   card.appendChild(meta);

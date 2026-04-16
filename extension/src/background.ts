@@ -2,6 +2,7 @@
 // Manages keypair, offscreen document for WASM proving, cache cleanup
 
 import { API_BASE } from "./config";
+import { setEndorsement } from "./endorsed-cache";
 
 interface EndorsementMessage {
   type: "START_ENDORSEMENT";
@@ -261,7 +262,6 @@ async function runEndorsementFlow(
     console.log(`[commit] Endorsement created: ${endorsement.id}`);
 
     // Increment local endorsement counter for popup summary.
-    // Interim source until the "you endorsed this" revisit indicator lands.
     if (sentiment === "positive") {
       try {
         const { endorsement_count = 0 } = await chrome.storage.local.get("endorsement_count");
@@ -270,6 +270,10 @@ async function runEndorsementFlow(
         // Counter is best-effort; storage failures must not mask a successful endorsement
       }
     }
+
+    // Cache the endorsement for "You endorsed this" revisit indicators.
+    // Write is best-effort — setEndorsement never throws.
+    await setEndorsement("github", `${repoOwner}/${repoName}`, sentiment);
 
     return {
       success: true,
