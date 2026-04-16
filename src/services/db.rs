@@ -39,6 +39,7 @@ pub struct EndorsementRow {
     pub proof_hash: Vec<u8>,
     pub proof_type: String,
     pub status: String,
+    pub sentiment: String,
     pub created_at: String,
 }
 
@@ -282,9 +283,66 @@ impl Database {
         Ok(())
     }
 
+    /// Upsert an endorsement for a known endorser (key_hash is NOT NULL).
+    /// On conflict with an existing `(endorser_key_hash, subject_id)` row, the
+    /// row is fully refreshed — including sentiment, proof, and timestamps — so
+    /// every persisted sentiment has a current ZK proof backing it.
+    ///
+    /// Returns `(endorsement_id, is_insert)` where `is_insert` is true for new rows
+    /// and false for updates (sentiment flips or re-endorsements).
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_endorsement(
+        &self,
+        id: &Uuid,
+        subject_id: &Uuid,
+        category: &str,
+        proof_hash: &[u8],
+        proof_type: &str,
+        attestation_data: Option<&[u8]>,
+        endorser_key_hash: &str,
+        sentiment: &str,
+    ) -> Result<(String, bool)> {
+        // Check if an existing row will be updated (for return value semantics)
+        let existing_id: Option<String> = self
+            .conn
+            .prepare("SELECT id FROM endorsements WHERE endorser_key_hash = ? AND subject_id = ?")?
+            .query_row(params![endorser_key_hash, subject_id.to_string()], |row| {
+                row.get(0)
+            })
+            .ok();
+
+        self.conn.execute(
+            "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type, attestation_data, endorser_key_hash, sentiment)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(endorser_key_hash, subject_id) DO UPDATE SET
+                sentiment = excluded.sentiment,
+                status = 'pending_attestation',
+                attestation_data = excluded.attestation_data,
+                proof_hash = excluded.proof_hash,
+                proof_type = excluded.proof_type,
+                created_at = datetime('now')",
+            params![
+                id.to_string(),
+                subject_id.to_string(),
+                category,
+                proof_hash,
+                proof_type,
+                attestation_data,
+                endorser_key_hash,
+                sentiment,
+            ],
+        )?;
+
+        if let Some(eid) = existing_id {
+            Ok((eid, false))
+        } else {
+            Ok((id.to_string(), true))
+        }
+    }
+
     pub fn get_endorsements_for_subject(&self, subject_id: &Uuid) -> Result<Vec<EndorsementRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at
+            "SELECT id, subject_id, category, proof_hash, proof_type, status, sentiment, created_at
              FROM endorsements WHERE subject_id = ? ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![subject_id.to_string()], |row| {
@@ -295,7 +353,8 @@ impl Database {
                 proof_hash: row.get(3)?,
                 proof_type: row.get(4)?,
                 status: row.get(5)?,
-                created_at: row.get(6)?,
+                sentiment: row.get(6)?,
+                created_at: row.get(7)?,
             })
         })?;
         rows.collect()
@@ -396,7 +455,8 @@ impl Database {
         Ok(count)
     }
 
-    /// Returns `(verified_count, pending_count)` for non-failed endorsements.
+    /// Returns `(verified_count, pending_count)` for non-failed endorsements
+    /// (positive sentiment only, for backward compatibility).
     pub fn get_endorsement_counts_by_status(&self, subject_id: &Uuid) -> Result<(u32, u32)> {
         let mut stmt = self.conn.prepare(
             "SELECT status, COUNT(*) FROM endorsements \
@@ -419,13 +479,75 @@ impl Database {
         Ok((verified, pending))
     }
 
+    /// Returns endorsement counts bucketed by status and sentiment:
+    /// `(positive_verified, positive_pending, negative_verified, negative_pending)`
+    pub fn get_endorsement_counts_by_status_and_sentiment(
+        &self,
+        subject_id: &Uuid,
+    ) -> Result<(u32, u32, u32, u32)> {
+        let mut stmt = self.conn.prepare(
+            "SELECT sentiment, status, COUNT(*) FROM endorsements \
+             WHERE subject_id = ? AND status IN ('verified', 'pending_attestation') \
+             GROUP BY sentiment, status",
+        )?;
+        let mut pv: u32 = 0; // positive verified
+        let mut pp: u32 = 0; // positive pending
+        let mut nv: u32 = 0; // negative verified
+        let mut np: u32 = 0; // negative pending
+        let rows = stmt.query_map(params![subject_id.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (sentiment, status, count) = row?;
+            match (sentiment.as_str(), status.as_str()) {
+                ("positive", "verified") => pv = count,
+                ("positive", "pending_attestation") => pp = count,
+                ("negative", "verified") => nv = count,
+                ("negative", "pending_attestation") => np = count,
+                _ => {}
+            }
+        }
+        Ok((pv, pp, nv, np))
+    }
+
+    /// Count recent endorsements for a specific endorser+subject pair within a time window.
+    /// Used for per-endorser rate limiting.
+    pub fn count_recent_endorsements_by_endorser(
+        &self,
+        endorser_key_hash: &str,
+        subject_id: &Uuid,
+        window_minutes: i64,
+    ) -> Result<u32> {
+        let count: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM endorsements WHERE endorser_key_hash = ? AND subject_id = ? AND created_at > datetime('now', '-' || ? || ' minutes')",
+            params![endorser_key_hash, subject_id.to_string(), window_minutes],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Count unique endorsers for a subject (regardless of sentiment polarity).
+    pub fn get_unique_endorser_count(&self, subject_id: &Uuid) -> Result<u32> {
+        let count: u32 = self.conn.query_row(
+            "SELECT COUNT(DISTINCT endorser_key_hash) FROM endorsements \
+             WHERE subject_id = ? AND endorser_key_hash IS NOT NULL AND status != 'failed'",
+            params![subject_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     pub fn get_recent_endorsements(
         &self,
         subject_id: &Uuid,
         limit: u32,
     ) -> Result<Vec<EndorsementRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at
+            "SELECT id, subject_id, category, proof_hash, proof_type, status, sentiment, created_at
              FROM endorsements WHERE subject_id = ? ORDER BY created_at DESC LIMIT ?",
         )?;
         let rows = stmt.query_map(params![subject_id.to_string(), limit], |row| {
@@ -436,7 +558,8 @@ impl Database {
                 proof_hash: row.get(3)?,
                 proof_type: row.get(4)?,
                 status: row.get(5)?,
-                created_at: row.get(6)?,
+                sentiment: row.get(6)?,
+                created_at: row.get(7)?,
             })
         })?;
         rows.collect()

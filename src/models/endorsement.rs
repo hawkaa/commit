@@ -79,6 +79,35 @@ pub enum AttestationStatus {
     Failed,
 }
 
+/// Endorsement sentiment: positive ("I endorse this") or negative ("not for me").
+/// Defaults to `Positive` for backward compatibility with existing rows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Sentiment {
+    #[default]
+    Positive,
+    Negative,
+}
+
+impl Sentiment {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Positive => "positive",
+            Self::Negative => "negative",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "positive" => Some(Self::Positive),
+            "negative" => Some(Self::Negative),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Endorsement {
     pub id: Uuid,
@@ -97,6 +126,7 @@ pub struct EndorsementSummary {
     pub category: String,
     pub proof_type: String,
     pub status: String,
+    pub sentiment: String,
     pub created_at: String,
     pub on_chain: bool,
     pub tx_hash: Option<String>,
