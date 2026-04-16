@@ -10,6 +10,8 @@ use crate::services::github::GitHubRepo;
 pub const VERIFIED_WEIGHT: f64 = 1.0;
 /// Weight for pending_attestation endorsements (lower trust).
 pub const PENDING_WEIGHT: f64 = 0.3;
+/// Weight for negative endorsements (symmetric with positive).
+pub const NEGATIVE_WEIGHT: f64 = -1.0;
 
 /// Compute the Layer 1 breakdown from GitHub repo signals.
 fn layer1_breakdown(repo: &GitHubRepo, contributor_count: usize) -> ScoreBreakdown {
@@ -50,38 +52,56 @@ pub fn score_github_repo(repo: &GitHubRepo, contributor_count: usize) -> CommitS
 /// Compute a commit score that factors in endorsement status weighting.
 ///
 /// Verified endorsements count fully, pending ones are down-weighted.
+/// Negative endorsements subtract from the weighted sum (floored at 0).
 /// Layer 2 scoring activates when any non-failed endorsements exist.
 ///
 /// `avg_tenure_months` is the average age of endorsements for this subject.
-/// `unique_endorser_count` is the number of unique endorsers (0 until network keyring lands).
+/// `unique_endorser_count` is the number of unique endorsers (polarity-agnostic).
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn score_github_repo_with_endorsements(
     repo: &GitHubRepo,
     contributor_count: usize,
-    verified_count: u32,
-    pending_count: u32,
+    positive_verified: u32,
+    positive_pending: u32,
+    negative_verified: u32,
+    negative_pending: u32,
     avg_tenure_months: f64,
     unique_endorser_count: u32,
 ) -> CommitScore {
     let mut breakdown = layer1_breakdown(repo, contributor_count);
 
-    let has_layer2 = verified_count > 0 || pending_count > 0;
+    let total_positive = positive_verified + positive_pending;
+    let total_negative = negative_verified + negative_pending;
+    let has_layer2 = total_positive > 0 || total_negative > 0;
 
+    // Weighted sum: positive contributes positively, negative subtracts.
+    // Pending-discount applies to both polarities.
     #[allow(clippy::cast_precision_loss)]
-    let weighted_sum =
-        f64::from(verified_count) * VERIFIED_WEIGHT + f64::from(pending_count) * PENDING_WEIGHT;
+    let weighted_sum = f64::from(positive_verified) * VERIFIED_WEIGHT
+        + f64::from(positive_pending) * PENDING_WEIGHT
+        + f64::from(negative_verified) * NEGATIVE_WEIGHT
+        + f64::from(negative_pending) * NEGATIVE_WEIGHT * PENDING_WEIGHT.abs();
 
-    breakdown.endorsements = (weighted_sum * 5.0).min(30.0);
+    // Floor at 0: negative endorsements can zero out the component but not make it negative.
+    breakdown.endorsements = weighted_sum.max(0.0).mul_add(5.0, 0.0).min(30.0);
 
+    // proof_strength and tenure use absolute counts (the proof itself is what they measure,
+    // regardless of sentiment direction).
     #[allow(clippy::cast_precision_loss)]
-    let total = f64::from(verified_count + pending_count);
+    let total = f64::from(total_positive + total_negative);
+    let abs_weighted = f64::from(positive_verified) * VERIFIED_WEIGHT
+        + f64::from(positive_pending) * PENDING_WEIGHT
+        + f64::from(negative_verified) * VERIFIED_WEIGHT
+        + f64::from(negative_pending) * PENDING_WEIGHT;
     breakdown.proof_strength = if total > 0.0 {
-        (weighted_sum / total) * 15.0
+        (abs_weighted / total) * 15.0
     } else {
         0.0
     };
 
     breakdown.tenure = avg_tenure_months.min(10.0);
+    // network_density counts unique endorsers regardless of polarity
     breakdown.network_density = (f64::from(unique_endorser_count) * 3.0).min(15.0);
 
     let score = compute_score(&breakdown, has_layer2);

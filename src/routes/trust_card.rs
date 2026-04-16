@@ -151,19 +151,22 @@ async fn get_github_trust_card(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Compute score with endorsement status weighting
-    let (verified_count, pending_count) = db
-        .get_endorsement_counts_by_status(&subject.id)
-        .unwrap_or((0, 0));
-    let score = if verified_count > 0 || pending_count > 0 {
+    // Compute score with endorsement status + sentiment weighting
+    let (pv, pp, nv, np) = db
+        .get_endorsement_counts_by_status_and_sentiment(&subject.id)
+        .unwrap_or((0, 0, 0, 0));
+    let score = if pv > 0 || pp > 0 || nv > 0 || np > 0 {
         let avg_tenure_months = db.get_endorsement_tenure_months(&subject.id).unwrap_or(0.0);
+        let unique_endorser_count = db.get_unique_endorser_count(&subject.id).unwrap_or(0);
         score_github_repo_with_endorsements(
             &gh_repo,
             contributor_count,
-            verified_count,
-            pending_count,
+            pv,
+            pp,
+            nv,
+            np,
             avg_tenure_months,
-            0, // unique_endorser_count: not yet available (network keyring)
+            unique_endorser_count,
         )
     } else {
         score_github_repo(&gh_repo, contributor_count)

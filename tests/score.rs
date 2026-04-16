@@ -1,6 +1,6 @@
 use commit_backend::models::signal::{ScoreBreakdown, compute_score};
 use commit_backend::services::score::{
-    PENDING_WEIGHT, VERIFIED_WEIGHT, score_github_repo_with_endorsements,
+    NEGATIVE_WEIGHT, PENDING_WEIGHT, VERIFIED_WEIGHT, score_github_repo_with_endorsements,
 };
 
 #[test]
@@ -174,7 +174,7 @@ fn make_test_repo() -> GitHubRepo {
 #[test]
 fn tenure_3_months_produces_3() {
     let repo = make_test_repo();
-    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 0);
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 0, 0, 3.0, 0);
     assert!(
         (score.breakdown.tenure - 3.0).abs() < f64::EPSILON,
         "tenure should be 3.0, got {}",
@@ -185,7 +185,7 @@ fn tenure_3_months_produces_3() {
 #[test]
 fn tenure_15_months_caps_at_10() {
     let repo = make_test_repo();
-    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 15.0, 0);
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 0, 0, 15.0, 0);
     assert!(
         (score.breakdown.tenure - 10.0).abs() < f64::EPSILON,
         "tenure should be capped at 10.0, got {}",
@@ -196,7 +196,7 @@ fn tenure_15_months_caps_at_10() {
 #[test]
 fn tenure_zero_with_no_endorsements() {
     let repo = make_test_repo();
-    let score = score_github_repo_with_endorsements(&repo, 10, 0, 0, 0.0, 0);
+    let score = score_github_repo_with_endorsements(&repo, 10, 0, 0, 0, 0, 0.0, 0);
     assert!(
         (score.breakdown.tenure - 0.0).abs() < f64::EPSILON,
         "tenure should be 0.0, got {}",
@@ -207,7 +207,7 @@ fn tenure_zero_with_no_endorsements() {
 #[test]
 fn tenure_near_zero_for_fresh_endorsement() {
     let repo = make_test_repo();
-    let score = score_github_repo_with_endorsements(&repo, 10, 1, 0, 0.01, 0);
+    let score = score_github_repo_with_endorsements(&repo, 10, 1, 0, 0, 0, 0.01, 0);
     assert!(
         score.breakdown.tenure < 0.1,
         "tenure should be near 0, got {}",
@@ -218,8 +218,8 @@ fn tenure_near_zero_for_fresh_endorsement() {
 #[test]
 fn tenure_increases_blended_score() {
     let repo = make_test_repo();
-    let score_no_tenure = score_github_repo_with_endorsements(&repo, 10, 3, 0, 0.0, 0);
-    let score_with_tenure = score_github_repo_with_endorsements(&repo, 10, 3, 0, 5.0, 0);
+    let score_no_tenure = score_github_repo_with_endorsements(&repo, 10, 3, 0, 0, 0, 0.0, 0);
+    let score_with_tenure = score_github_repo_with_endorsements(&repo, 10, 3, 0, 0, 0, 5.0, 0);
     assert!(
         score_with_tenure.score.unwrap() >= score_no_tenure.score.unwrap(),
         "Score with tenure ({:?}) should be >= score without ({:?})",
@@ -231,7 +231,7 @@ fn tenure_increases_blended_score() {
 #[test]
 fn network_density_zero_when_no_endorser_count() {
     let repo = make_test_repo();
-    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 0);
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 0, 0, 3.0, 0);
     assert!(
         (score.breakdown.network_density - 0.0).abs() < f64::EPSILON,
         "network_density should be 0.0 when unique_endorser_count is 0, got {}",
@@ -242,7 +242,7 @@ fn network_density_zero_when_no_endorser_count() {
 #[test]
 fn network_density_computed_from_endorser_count() {
     let repo = make_test_repo();
-    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 4);
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 0, 0, 3.0, 4);
     // min(4 * 3.0, 15.0) = 12.0
     assert!(
         (score.breakdown.network_density - 12.0).abs() < f64::EPSILON,
@@ -254,11 +254,94 @@ fn network_density_computed_from_endorser_count() {
 #[test]
 fn network_density_caps_at_15() {
     let repo = make_test_repo();
-    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 3.0, 10);
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 0, 0, 3.0, 10);
     // min(10 * 3.0, 15.0) = 15.0
     assert!(
         (score.breakdown.network_density - 15.0).abs() < f64::EPSILON,
         "network_density should be capped at 15.0, got {}",
         score.breakdown.network_density
+    );
+}
+
+// --- Negative sentiment scoring tests ---
+
+#[test]
+fn negative_weight_constant_correct() {
+    assert!((NEGATIVE_WEIGHT - (-1.0)).abs() < f64::EPSILON);
+}
+
+#[test]
+fn all_positive_identical_to_before() {
+    // 3 positive verified, 0 negative → identical to old behavior
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 3, 0, 0, 0, 3.0, 0);
+    // weighted_sum = 3.0 * 1.0 = 3.0, endorsements = 15.0
+    assert!(
+        (score.breakdown.endorsements - 15.0).abs() < f64::EPSILON,
+        "endorsements should be 15.0, got {}",
+        score.breakdown.endorsements
+    );
+}
+
+#[test]
+fn negative_reduces_endorsements_component() {
+    // 3 positive verified, 1 negative verified → weighted = 3 - 1 = 2.0, endorsements = 10.0
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 3, 0, 1, 0, 3.0, 0);
+    assert!(
+        (score.breakdown.endorsements - 10.0).abs() < f64::EPSILON,
+        "endorsements should be 10.0, got {}",
+        score.breakdown.endorsements
+    );
+}
+
+#[test]
+fn only_negative_floors_endorsements_at_zero() {
+    // 0 positive, 2 negative verified → weighted = -2.0, floored to 0
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 0, 0, 2, 0, 3.0, 2);
+    assert!(
+        score.breakdown.endorsements.abs() < f64::EPSILON,
+        "endorsements should be 0.0 (floored), got {}",
+        score.breakdown.endorsements
+    );
+    // network_density should still reflect 2 unique endorsers
+    assert!(
+        (score.breakdown.network_density - 6.0).abs() < f64::EPSILON,
+        "network_density should be 6.0 (2 * 3.0), got {}",
+        score.breakdown.network_density
+    );
+}
+
+#[test]
+fn equal_positive_negative_zeros_endorsements() {
+    // 2 positive verified, 2 negative verified → weighted = 0, endorsements = 0
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 2, 0, 2, 0, 3.0, 4);
+    assert!(
+        score.breakdown.endorsements.abs() < f64::EPSILON,
+        "endorsements should be 0.0, got {}",
+        score.breakdown.endorsements
+    );
+    // proof_strength should still reflect proof activity (all 4 endorsements)
+    assert!(
+        score.breakdown.proof_strength > 0.0,
+        "proof_strength should be > 0, got {}",
+        score.breakdown.proof_strength
+    );
+}
+
+#[test]
+fn pending_negative_uses_discount() {
+    // 1 negative pending → weighted = -1.0 * 0.3 = -0.3
+    // 1 positive verified → weighted = 1.0
+    // net = 0.7, endorsements = 3.5
+    let repo = make_test_repo();
+    let score = score_github_repo_with_endorsements(&repo, 10, 1, 0, 0, 1, 3.0, 0);
+    let expected = (1.0 * VERIFIED_WEIGHT + NEGATIVE_WEIGHT * PENDING_WEIGHT.abs()) * 5.0;
+    assert!(
+        (score.breakdown.endorsements - expected).abs() < 0.01,
+        "endorsements should be {expected:.1}, got {}",
+        score.breakdown.endorsements
     );
 }
