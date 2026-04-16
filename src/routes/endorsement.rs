@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::models::{EndorsementCategory, EndorsementSummary, ProofType, SubjectKind};
+use crate::models::{EndorsementCategory, EndorsementSummary, ProofType, Sentiment, SubjectKind};
 use crate::services::db::map_db_error;
 use crate::validation::{validate_transcript_subject, verify_attestation_signature};
 use crate::{RATE_LIMIT_MAX_ENDORSEMENTS, RATE_LIMIT_WINDOW_MINUTES};
@@ -19,6 +19,10 @@ pub struct SubmitEndorsementRequest {
     pub transcript_sent: String,
     pub transcript_recv: Option<String>,
     pub endorser_key_hash: Option<String>,
+    /// Endorsement sentiment. Defaults to `positive` when omitted (backward compat).
+    /// Note: sentiment is application-layer metadata; the ZK proof does not bind it.
+    #[serde(default)]
+    pub sentiment: Sentiment,
 }
 
 #[derive(Serialize)]
@@ -96,27 +100,68 @@ pub async fn submit_endorsement(
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }
 
+    // Per-endorser rate limit: 5 endorsements per key_hash per subject per 60min.
+    // TODO: in-process HashMap for horizontal scaling; DB-based limit is fine for single instance.
+    if let Some(ref kh) = req.endorser_key_hash {
+        let endorser_recent = db
+            .count_recent_endorsements_by_endorser(kh, &subject.id, RATE_LIMIT_WINDOW_MINUTES)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if endorser_recent >= RATE_LIMIT_MAX_ENDORSEMENTS {
+            tracing::warn!(
+                "Per-endorser rate limit exceeded for key_hash {}... subject {}: {} in last {} minutes",
+                &kh[..8],
+                subject.id,
+                endorser_recent,
+                RATE_LIMIT_WINDOW_MINUTES
+            );
+            return Err(StatusCode::TOO_MANY_REQUESTS);
+        }
+    }
+
     let endorsement_id = Uuid::new_v4();
-    db.create_endorsement(
-        &endorsement_id,
-        &subject.id,
-        category.as_str(),
-        &proof_hash,
-        proof_type.as_str(),
-        Some(&attestation_bytes),
-        req.endorser_key_hash.as_deref(),
-    )
-    .map_err(map_db_error)?;
+
+    // Use upsert when endorser_key_hash is present (extension flow),
+    // insert-only for NULL key_hash (webhook/legacy flow).
+    let (persisted_id, is_insert) = if let Some(ref kh) = req.endorser_key_hash {
+        db.upsert_endorsement(
+            &endorsement_id,
+            &subject.id,
+            category.as_str(),
+            &proof_hash,
+            proof_type.as_str(),
+            Some(&attestation_bytes),
+            kh,
+            req.sentiment.as_str(),
+        )
+        .map_err(map_db_error)?
+    } else {
+        db.create_endorsement(
+            &endorsement_id,
+            &subject.id,
+            category.as_str(),
+            &proof_hash,
+            proof_type.as_str(),
+            Some(&attestation_bytes),
+            None,
+        )
+        .map_err(map_db_error)?;
+        (endorsement_id.to_string(), true)
+    };
 
     // Promote to verified if attestation signature was validated
+    let eid = Uuid::parse_str(&persisted_id).unwrap_or(endorsement_id);
     let status = if signature_verified {
-        db.update_endorsement_status(&endorsement_id, "verified")
+        db.update_endorsement_status(&eid, "verified")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        // Create attestation record for L2 submission (only for verified endorsements)
-        let attestation_id = Uuid::new_v4();
-        db.create_attestation(&attestation_id, &endorsement_id, "base_sepolia")
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        // Create attestation record for L2 submission only on INSERT (not on flip/UPDATE).
+        // A flip doesn't warrant a second on-chain write — the L2 record represents
+        // "this device made an endorsement of this subject."
+        if is_insert {
+            let attestation_id = Uuid::new_v4();
+            db.create_attestation(&attestation_id, &eid, "base_sepolia")
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        }
 
         "verified"
     } else {
@@ -129,7 +174,7 @@ pub async fn submit_endorsement(
     }
 
     Ok(Json(EndorsementResponse {
-        id: endorsement_id.to_string(),
+        id: persisted_id,
         status: status.to_string(),
     }))
 }

@@ -314,7 +314,7 @@ impl Database {
         self.conn.execute(
             "INSERT INTO endorsements (id, subject_id, category, proof_hash, proof_type, attestation_data, endorser_key_hash, sentiment)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(endorser_key_hash, subject_id) DO UPDATE SET
+             ON CONFLICT(endorser_key_hash, subject_id) WHERE endorser_key_hash IS NOT NULL DO UPDATE SET
                 sentiment = excluded.sentiment,
                 status = 'pending_attestation',
                 attestation_data = excluded.attestation_data,
