@@ -38,6 +38,7 @@ pub struct EndorsementRow {
     pub category: String,
     pub proof_hash: Vec<u8>,
     pub proof_type: String,
+    pub sentiment: String,
     pub status: String,
     pub created_at: String,
 }
@@ -169,6 +170,17 @@ impl Database {
             )?;
         }
 
+        // Migration: add sentiment column for negative endorsement support.
+        let has_sentiment: bool = self
+            .conn
+            .prepare("SELECT sentiment FROM endorsements LIMIT 0")
+            .is_ok();
+        if !has_sentiment {
+            self.conn.execute_batch(
+                "ALTER TABLE endorsements ADD COLUMN sentiment TEXT NOT NULL DEFAULT 'positive';",
+            )?;
+        }
+
         // Migration: normalize chain='pending' to 'base_sepolia'
         self.conn.execute_batch(
             "UPDATE attestations SET chain = 'base_sepolia' WHERE chain = 'pending';",
@@ -261,7 +273,7 @@ impl Database {
 
     pub fn get_endorsements_for_subject(&self, subject_id: &Uuid) -> Result<Vec<EndorsementRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at
+            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at, sentiment
              FROM endorsements WHERE subject_id = ? ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![subject_id.to_string()], |row| {
@@ -271,6 +283,7 @@ impl Database {
                 category: row.get(2)?,
                 proof_hash: row.get(3)?,
                 proof_type: row.get(4)?,
+                sentiment: row.get(7)?,
                 status: row.get(5)?,
                 created_at: row.get(6)?,
             })
@@ -402,7 +415,7 @@ impl Database {
         limit: u32,
     ) -> Result<Vec<EndorsementRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at
+            "SELECT id, subject_id, category, proof_hash, proof_type, status, created_at, sentiment
              FROM endorsements WHERE subject_id = ? ORDER BY created_at DESC LIMIT ?",
         )?;
         let rows = stmt.query_map(params![subject_id.to_string(), limit], |row| {
@@ -412,6 +425,7 @@ impl Database {
                 category: row.get(2)?,
                 proof_hash: row.get(3)?,
                 proof_type: row.get(4)?,
+                sentiment: row.get(7)?,
                 status: row.get(5)?,
                 created_at: row.get(6)?,
             })

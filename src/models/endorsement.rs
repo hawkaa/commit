@@ -98,6 +98,7 @@ pub struct EndorsementSummary {
     pub proof_type: String,
     pub status: String,
     pub created_at: String,
+    pub sentiment: String,
     pub on_chain: bool,
     pub tx_hash: Option<String>,
 }

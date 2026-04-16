@@ -53,6 +53,7 @@ fn map_endorsement_rows(
                 category: r.category,
                 proof_type: r.proof_type,
                 status: r.status,
+                sentiment: r.sentiment,
                 created_at: r.created_at,
                 on_chain,
                 tx_hash,
