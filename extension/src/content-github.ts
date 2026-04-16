@@ -1,6 +1,7 @@
 // Commit Trust Card — GitHub content script
 // Injects trust cards on github.com repo pages
 import { API_BASE, CACHE_TTL_MS } from "./config";
+import { getEndorsement, type EndorsedEntry } from "./endorsed-cache";
 
 interface EndorsementSummary {
   id: string;
@@ -46,7 +47,14 @@ async function injectTrustCard(): Promise<void> {
       skeleton.remove();
       return;
     }
-    skeleton.replaceWith(createTrustCard(data));
+    // Read endorsed-subjects cache (best-effort — null on failure)
+    let cached: EndorsedEntry | null = null;
+    try {
+      cached = await getEndorsement("github", repoId);
+    } catch {
+      // Cache read failure is a silent miss
+    }
+    skeleton.replaceWith(createTrustCard(data, cached));
   } catch {
     skeleton.remove();
   }
@@ -81,7 +89,7 @@ function createSkeleton(): HTMLDivElement {
   return el;
 }
 
-function createTrustCard(data: TrustCardData): HTMLDivElement {
+function createTrustCard(data: TrustCardData, cachedEndorsement: EndorsedEntry | null): HTMLDivElement {
   const { subject, score } = data;
   const scoreValue = score.score!;
   const tier = scoreValue > 70 ? "high" : scoreValue > 40 ? "mid" : "none";
@@ -170,24 +178,48 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
   details.appendChild(addBadge);
 
   // Endorsement action row: "Endorse" (primary) + "Not for me" (subdued secondary)
+  // If the user previously endorsed this subject, show a muted indicator on the
+  // active-sentiment side and keep the opposite button interactive for flipping.
   const actionRow = document.createElement("div");
   actionRow.className = "commit-endorse-row";
 
   const endorseBtn = document.createElement("button");
   endorseBtn.className = "commit-endorse-btn";
-  endorseBtn.textContent = "Endorse";
   endorseBtn.title = "Create a ZK-verified endorsement for this repo";
-  endorseBtn.addEventListener("click", () =>
-    startEndorsement(subject.identifier, "positive", endorseBtn, notForMeBtn)
-  );
 
   const notForMeBtn = document.createElement("button");
   notForMeBtn.className = "commit-endorse-secondary";
-  notForMeBtn.textContent = "Not for me";
   notForMeBtn.title = "Signal that this repo is not recommended";
-  notForMeBtn.addEventListener("click", () =>
-    startEndorsement(subject.identifier, "negative", notForMeBtn, endorseBtn)
-  );
+
+  if (cachedEndorsement?.sentiment === "positive") {
+    // Muted indicator on primary; secondary stays active for flipping
+    endorseBtn.textContent = "Endorsed \u2713";
+    endorseBtn.classList.add("commit-endorse-indicator");
+    endorseBtn.disabled = true;
+    notForMeBtn.textContent = "Not for me";
+    notForMeBtn.addEventListener("click", () =>
+      startEndorsement(subject.identifier, "negative", notForMeBtn, endorseBtn)
+    );
+  } else if (cachedEndorsement?.sentiment === "negative") {
+    // Muted indicator on secondary; primary stays active for flipping
+    notForMeBtn.textContent = "Not for me \u2713";
+    notForMeBtn.classList.add("commit-endorse-indicator");
+    notForMeBtn.disabled = true;
+    endorseBtn.textContent = "Endorse";
+    endorseBtn.addEventListener("click", () =>
+      startEndorsement(subject.identifier, "positive", endorseBtn, notForMeBtn)
+    );
+  } else {
+    // No cached state — default interactive buttons
+    endorseBtn.textContent = "Endorse";
+    endorseBtn.addEventListener("click", () =>
+      startEndorsement(subject.identifier, "positive", endorseBtn, notForMeBtn)
+    );
+    notForMeBtn.textContent = "Not for me";
+    notForMeBtn.addEventListener("click", () =>
+      startEndorsement(subject.identifier, "negative", notForMeBtn, endorseBtn)
+    );
+  }
 
   actionRow.appendChild(endorseBtn);
   actionRow.appendChild(notForMeBtn);
