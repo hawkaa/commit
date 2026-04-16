@@ -1416,6 +1416,215 @@ async fn endorsement_invalid_key_hash_returns_400() {
     resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
 }
 
+// --- Sentiment tests ---
+
+#[tokio::test]
+async fn endorsement_post_negative_sentiment_persists() {
+    let (server, state) = build_app();
+    let key_hash = "b".repeat(64);
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "neg-org/neg-repo".to_string(),
+            display_name: "neg-org/neg-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+    }
+
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "neg-org/neg-repo",
+            "category": "usage",
+            "attestation": "deadbeef99887766",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/neg-org/neg-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "endorser_key_hash": key_hash,
+            "sentiment": "negative"
+        }))
+        .await;
+    resp.assert_status_ok();
+
+    // Check sentiment is in GET response
+    let get_resp = server
+        .get("/endorsements?kind=github&id=neg-org/neg-repo")
+        .await;
+    get_resp.assert_status_ok();
+    let endorsements: serde_json::Value = get_resp.json();
+    let arr = endorsements.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["sentiment"], "negative");
+}
+
+#[tokio::test]
+async fn endorsement_post_without_sentiment_defaults_to_positive() {
+    let (server, state) = build_app();
+    let key_hash = "c".repeat(64);
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "def-org/def-repo".to_string(),
+            display_name: "def-org/def-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+    }
+
+    let resp = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "def-org/def-repo",
+            "category": "usage",
+            "attestation": "deadbeefaabb1122",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/def-org/def-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "endorser_key_hash": key_hash
+        }))
+        .await;
+    resp.assert_status_ok();
+
+    let get_resp = server
+        .get("/endorsements?kind=github&id=def-org/def-repo")
+        .await;
+    get_resp.assert_status_ok();
+    let endorsements: serde_json::Value = get_resp.json();
+    assert_eq!(endorsements[0]["sentiment"], "positive");
+}
+
+#[tokio::test]
+async fn endorsement_upsert_flips_sentiment() {
+    let (server, state) = build_app();
+    let key_hash = "d".repeat(64);
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "flip-org/flip-repo".to_string(),
+            display_name: "flip-org/flip-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+    }
+
+    // First: positive endorsement
+    let resp1 = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "flip-org/flip-repo",
+            "category": "usage",
+            "attestation": "deadbeef11112222",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/flip-org/flip-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "endorser_key_hash": key_hash,
+            "sentiment": "positive"
+        }))
+        .await;
+    resp1.assert_status_ok();
+
+    // Second: flip to negative (different proof, same endorser+subject)
+    let resp2 = server
+        .post("/endorsements")
+        .json(&serde_json::json!({
+            "subject_kind": "github",
+            "subject_id": "flip-org/flip-repo",
+            "category": "usage",
+            "attestation": "deadbeef33334444",
+            "proof_type": "git_history",
+            "transcript_sent": "GET /repos/flip-org/flip-repo HTTP/1.1\r\nHost: api.github.com\r\n",
+            "endorser_key_hash": key_hash,
+            "sentiment": "negative"
+        }))
+        .await;
+    resp2.assert_status_ok();
+
+    // Should have exactly one row, now negative
+    let get_resp = server
+        .get("/endorsements?kind=github&id=flip-org/flip-repo")
+        .await;
+    get_resp.assert_status_ok();
+    let endorsements: serde_json::Value = get_resp.json();
+    let arr = endorsements.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "upsert should keep a single row");
+    assert_eq!(
+        arr[0]["sentiment"], "negative",
+        "sentiment should be flipped to negative"
+    );
+}
+
+#[tokio::test]
+async fn trust_page_renders_with_mixed_sentiment_endorsements() {
+    let (server, state) = build_app();
+
+    {
+        let db = state.db.lock().unwrap();
+        let subject = Subject {
+            id: Uuid::new_v4(),
+            kind: SubjectKind::GithubRepo,
+            identifier: "mixed-org/mixed-repo".to_string(),
+            display_name: "mixed-org/mixed-repo".to_string(),
+            endorsement_count: 0,
+        };
+        db.upsert_subject(&subject).unwrap();
+        let stored = db
+            .find_subject(&SubjectKind::GithubRepo, "mixed-org/mixed-repo")
+            .unwrap()
+            .unwrap();
+
+        // Create one positive and one negative endorsement
+        let eid1 = Uuid::new_v4();
+        db.create_endorsement(
+            &eid1,
+            &stored.id,
+            "usage",
+            &[0xaa_u8; 32],
+            "git_history",
+            None,
+            Some(&"a".repeat(64)),
+        )
+        .unwrap();
+
+        let eid2 = Uuid::new_v4();
+        db.upsert_endorsement(
+            &eid2,
+            &stored.id,
+            "usage",
+            &[0xbb_u8; 32],
+            "git_history",
+            None,
+            &"b".repeat(64),
+            "negative",
+        )
+        .unwrap();
+
+        db.cache_signals(
+            &stored.id,
+            r#"[{"source":"registry","category":"longevity","label":"Age","value":"2yr","verification":"public_api","timestamp":"2024-01-01","confidence":0.9}]"#,
+            r#"{"score":42,"breakdown":{"longevity":7.0,"maintenance":5.0,"community":3.0,"financial":0.0,"endorsements":0.0,"network_density":0.0,"proof_strength":0.0,"tenure":0.0},"layer1_only":true}"#,
+        )
+        .unwrap();
+    }
+
+    let resp = server.get("/trust/github/mixed-org/mixed-repo").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+    assert!(
+        body.contains("Endorsements"),
+        "trust page should render the endorsements section"
+    );
+}
+
 // --- Network query endpoint removal regression test ---
 
 #[tokio::test]
