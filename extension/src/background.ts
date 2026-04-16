@@ -262,11 +262,13 @@ async function runEndorsementFlow(
 
     // Increment local endorsement counter for popup summary.
     // Interim source until the "you endorsed this" revisit indicator lands.
-    try {
-      const { endorsement_count = 0 } = await chrome.storage.local.get("endorsement_count");
-      await chrome.storage.local.set({ endorsement_count: (endorsement_count as number) + 1 });
-    } catch {
-      // Counter is best-effort; storage failures must not mask a successful endorsement
+    if (sentiment === "positive") {
+      try {
+        const { endorsement_count = 0 } = await chrome.storage.local.get("endorsement_count");
+        await chrome.storage.local.set({ endorsement_count: (endorsement_count as number) + 1 });
+      } catch {
+        // Counter is best-effort; storage failures must not mask a successful endorsement
+      }
     }
 
     return {

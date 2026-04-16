@@ -448,7 +448,7 @@ impl Database {
 
     pub fn get_endorsement_count(&self, subject_id: &Uuid) -> Result<u32> {
         let count: u32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status != 'failed'",
+            "SELECT COUNT(*) FROM endorsements WHERE subject_id = ? AND status != 'failed' AND sentiment = 'positive'",
             params![subject_id.to_string()],
             |row| row.get(0),
         )?;
@@ -456,7 +456,8 @@ impl Database {
     }
 
     /// Returns `(verified_count, pending_count)` for non-failed endorsements
-    /// (positive sentiment only, for backward compatibility).
+    /// (all sentiments — does NOT filter by sentiment).
+    /// Deprecated: prefer `get_endorsement_counts_by_status_and_sentiment`.
     pub fn get_endorsement_counts_by_status(&self, subject_id: &Uuid) -> Result<(u32, u32)> {
         let mut stmt = self.conn.prepare(
             "SELECT status, COUNT(*) FROM endorsements \
