@@ -169,26 +169,44 @@ function createTrustCard(data: TrustCardData): HTMLDivElement {
   });
   details.appendChild(addBadge);
 
+  // Endorsement action row: "Endorse" (primary) + "Not for me" (subdued secondary)
+  const actionRow = document.createElement("div");
+  actionRow.className = "commit-endorse-row";
+
   const endorseBtn = document.createElement("button");
   endorseBtn.className = "commit-endorse-btn";
   endorseBtn.textContent = "Endorse";
   endorseBtn.title = "Create a ZK-verified endorsement for this repo";
   endorseBtn.addEventListener("click", () =>
-    startEndorsement(subject.identifier, endorseBtn)
+    startEndorsement(subject.identifier, "positive", endorseBtn, notForMeBtn)
   );
+
+  const notForMeBtn = document.createElement("button");
+  notForMeBtn.className = "commit-endorse-secondary";
+  notForMeBtn.textContent = "Not for me";
+  notForMeBtn.title = "Signal that this repo is not recommended";
+  notForMeBtn.addEventListener("click", () =>
+    startEndorsement(subject.identifier, "negative", notForMeBtn, endorseBtn)
+  );
+
+  actionRow.appendChild(endorseBtn);
+  actionRow.appendChild(notForMeBtn);
 
   card.appendChild(circle);
   card.appendChild(details);
-  card.appendChild(endorseBtn);
+  card.appendChild(actionRow);
   return card;
 }
 
 async function startEndorsement(
   repoId: string,
-  btn: HTMLButtonElement
+  sentiment: "positive" | "negative",
+  btn: HTMLButtonElement,
+  otherBtn: HTMLButtonElement
 ): Promise<void> {
   const [owner, name] = repoId.split("/");
   btn.disabled = true;
+  otherBtn.disabled = true;
   btn.textContent = "Proving...";
   btn.classList.add("commit-endorse-btn--active");
 
@@ -197,12 +215,23 @@ async function startEndorsement(
       type: "START_ENDORSEMENT",
       repoOwner: owner,
       repoName: name,
+      sentiment,
     });
 
     if (result.success) {
-      btn.textContent = "Endorsed";
       btn.classList.remove("commit-endorse-btn--active");
-      btn.classList.add("commit-endorse-btn--done");
+
+      if (sentiment === "positive") {
+        btn.textContent = "Endorsed";
+        btn.classList.add("commit-endorse-btn--done");
+        otherBtn.textContent = "Not for me";
+        otherBtn.classList.remove("commit-endorse-secondary--done");
+      } else {
+        btn.textContent = "Not for me \u2713";
+        btn.classList.add("commit-endorse-secondary--done");
+        otherBtn.textContent = "Endorse";
+        otherBtn.classList.remove("commit-endorse-btn--done");
+      }
 
       // Optimistically increment displayed count
       const card = btn.closest(".commit-trust-card");
@@ -225,20 +254,28 @@ async function startEndorsement(
       const cacheKey = `trust-card:github:${repoId}`;
       await chrome.storage.local.remove(cacheKey);
 
-      // Reset button after 3s to allow re-endorsement
+      // Reset buttons after 3s to allow re-endorsement
       setTimeout(() => {
-        btn.textContent = "Endorse";
-        btn.classList.remove("commit-endorse-btn--done");
+        if (sentiment === "positive") {
+          btn.textContent = "Endorse";
+          btn.classList.remove("commit-endorse-btn--done");
+        } else {
+          btn.textContent = "Not for me";
+          btn.classList.remove("commit-endorse-secondary--done");
+        }
         btn.disabled = false;
+        otherBtn.disabled = false;
       }, 3000);
     } else {
       console.error("[commit] Endorsement failed:", result.error);
       const label = errorCodeToLabel(result.errorCode);
-      resetEndorseButton(btn, label);
+      resetEndorseButton(btn, label, sentiment);
+      otherBtn.disabled = false;
     }
   } catch (err) {
     console.error("[commit] Endorsement error:", err);
-    resetEndorseButton(btn, "Offline");
+    resetEndorseButton(btn, "Offline", sentiment);
+    otherBtn.disabled = false;
   }
 }
 
@@ -259,11 +296,16 @@ function errorCodeToLabel(code?: string): string {
   }
 }
 
-function resetEndorseButton(btn: HTMLButtonElement, label: string): void {
+function resetEndorseButton(
+  btn: HTMLButtonElement,
+  label: string,
+  sentiment: "positive" | "negative" = "positive"
+): void {
   btn.textContent = label;
   btn.disabled = false;
+  const defaultLabel = sentiment === "positive" ? "Endorse" : "Not for me";
   setTimeout(() => {
-    btn.textContent = "Endorse";
+    btn.textContent = defaultLabel;
     btn.classList.remove("commit-endorse-btn--active");
   }, 3000);
 }

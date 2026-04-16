@@ -1,5 +1,7 @@
 // Commit Trust Card — Google SERP content script
 // Injects compact trust cards next to search results that match known subjects
+// Note: "Not for me" negative endorsement is intentionally NOT shown on SERP cards.
+// Too little context on SERP for a negative signal (CEO decision, Phase 3).
 import { API_BASE, CACHE_TTL_MS } from "./config";
 
 interface SerpTrustCardData {

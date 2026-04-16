@@ -7,6 +7,7 @@ interface EndorsementMessage {
   type: "START_ENDORSEMENT";
   repoOwner: string;
   repoName: string;
+  sentiment?: "positive" | "negative";
 }
 
 interface ProveResult {
@@ -135,8 +136,8 @@ const ENDORSEMENT_TIMEOUT_MS = 60000;
 async function handleStartEndorsement(
   msg: EndorsementMessage
 ): Promise<ProveResult> {
-  const { repoOwner, repoName } = msg;
-  console.log(`[commit] Starting endorsement for ${repoOwner}/${repoName}`);
+  const { repoOwner, repoName, sentiment = "positive" } = msg;
+  console.log(`[commit] Starting ${sentiment} endorsement for ${repoOwner}/${repoName}`);
 
   // Shared cancellation flag so the flow skips the API call after timeout
   const state = { cancelled: false };
@@ -148,7 +149,7 @@ async function handleStartEndorsement(
     }, ENDORSEMENT_TIMEOUT_MS)
   );
 
-  const flowPromise = runEndorsementFlow(repoOwner, repoName, state);
+  const flowPromise = runEndorsementFlow(repoOwner, repoName, sentiment, state);
   return Promise.race([flowPromise, timeoutPromise]);
 }
 
@@ -173,6 +174,7 @@ async function getEndorserKeyHash(): Promise<string | null> {
 async function runEndorsementFlow(
   repoOwner: string,
   repoName: string,
+  sentiment: "positive" | "negative",
   state: { cancelled: boolean }
 ): Promise<ProveResult> {
   try {
@@ -233,6 +235,7 @@ async function runEndorsementFlow(
       attestation: result.attestation,
       proof_type: "git_history",
       transcript_sent: result.transcriptSent,
+      sentiment,
     };
     if (endorserKeyHash) {
       body.endorser_key_hash = endorserKeyHash;
