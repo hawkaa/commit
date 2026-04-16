@@ -169,6 +169,29 @@ impl Database {
             )?;
         }
 
+        // Migration: add sentiment column (default 'positive') and partial unique index
+        // on (endorser_key_hash, subject_id) for upsert-on-flip semantics.
+        // NULL endorser_key_hash rows are exempt — SQLite treats NULL as distinct in UNIQUE.
+        let has_sentiment_col: bool = self
+            .conn
+            .prepare("SELECT sentiment FROM endorsements LIMIT 0")
+            .is_ok();
+        if !has_sentiment_col {
+            self.conn.execute_batch(
+                "ALTER TABLE endorsements ADD COLUMN sentiment TEXT NOT NULL DEFAULT 'positive';",
+            )?;
+        }
+        let has_endorser_subject_unique: bool = self
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_endorser_subject_unique'")
+            .and_then(|mut s| s.query_row([], |_| Ok(true)))
+            .unwrap_or(false);
+        if !has_endorser_subject_unique {
+            self.conn.execute_batch(
+                "CREATE UNIQUE INDEX idx_endorser_subject_unique ON endorsements(endorser_key_hash, subject_id) WHERE endorser_key_hash IS NOT NULL;",
+            )?;
+        }
+
         // Migration: normalize chain='pending' to 'base_sepolia'
         self.conn.execute_batch(
             "UPDATE attestations SET chain = 'base_sepolia' WHERE chain = 'pending';",
