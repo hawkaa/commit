@@ -85,14 +85,14 @@ Do not deviate without explicit user approval.
 
 ### Phase 3 — Endorse Everywhere + Launch (weeks 6-9)
 See CEO plan: `~/.gstack/projects/commit/ceo-plans/2026-04-12-phase3-one-network-endorsements.md`
-- [ ] SERP card: add endorsement count + endorse button (parity with GitHub card)
+- [x] SERP card: add endorsement count + endorse button (parity with GitHub card)
 - [x] Trust page: add "Get extension" CTA (growth loop)
 - [x] Remove dead keyring code (popup keyring UI, POST /network-query, NETWORK_QUERY handler)
-- [ ] "Not for me" negative endorsement signal (sentiment field, upsert, score impact)
-- [ ] "You endorsed this" revisit indicator (local cache)
+- [x] "Not for me" negative endorsement signal (sentiment field, upsert, score impact)
+- [x] "You endorsed this" revisit indicator (local cache)
 - [x] "Add badge to README" CTA on GitHub trust cards (clipboard)
 - [x] Post-install onboarding page (closes growth loop conversion cliff)
-- [ ] Design fixes: absolute badge URLs, install CTA, focus-visible, score animation (8 findings from design audit)
+- [x] Design fixes: absolute badge URLs, install CTA, focus-visible, score animation (8 findings from design audit)
 - [ ] Replace `CHROME_WEBSTORE_URL` placeholder in `src/routes/trust_page.rs` after Chrome Web Store approval
 - [ ] Seed endorsements from founder
 - [ ] Launch: HN, crypto Twitter, Rust community
